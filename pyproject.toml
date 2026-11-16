@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "idlixport"
+version = "0.1.0"
+description = "IdlixPort — periksa dan unduh film dari IDLIX atau URL media."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["yt-dlp==2026.10.21"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.9,<1"]
+portable = ["imageio-ffmpeg==0.6.0"]
+
+[project.scripts]
+idlixport = "idlix_downloader.cli:main"
+idlix = "idlix_downloader.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
