@@ -244,3 +244,35 @@ Ikuti revisi bagian 10 PRD jika bertentangan dengan rancangan awal. Estimasi 7�
 - Folder dipilih melalui dialog lokal launcher atau daftar folder yang disetujui operator, menghasilkan ID folder backend. Buka file/folder hanya berdasarkan ID terdaftar; tanpa shell dan tanpa path bebas. Lokasi data/pengaturan stabil mengikuti OS, bukan current working directory launcher.
 - Milestone baru: M1 alur satu URL sampai hasil lokal; M2 launcher dan installer OS pertama; M3 sesi browser opsional terverifikasi; M4 batch dan pematangan distribusi. Sesi guest tetap dapat digunakan sebelum M3. Rilis yang mengklaim seluruh pengalaman revisi PRD mensyaratkan M2 dan M3 selesai, bukan hanya server web berjalan.
 - Tambahkan pengujian clean install, upgrade/uninstall dengan preservasi data, port terpakai, klik launcher dua kali, izin browser ditolak, focus berulang, timeout polling, sesi invalid, inspeksi saat download aktif, dan subtitle parsial. Perbarui README serta panduan pengguna agar jalur installer utama dan source install developer terpisah.
+
+
+## 14. Hasil P0 — 17 November 2026
+
+Lihat [Web Readiness Report](web-readiness-report.md) untuk keputusan platform, bukti tes, spike dan blocker sumber. Prototype transport hanya berada di `tools/spikes/test_network_spike.py`, tidak digunakan oleh runtime. T08 harus mengintegrasikan handler tunggal tanpa fallback proxy/external downloader, lalu menguji transfer penuh dan TLS nyata. Sesi browser belum terverifikasi oleh sumber; jangan melewati gate tersebut untuk klaim akun.
+
+UI T12 hanya menampilkan kontrol subtitle aktif setelah T20 selesai; sebelum itu sembunyikan atau nonaktifkan dengan penjelasan. Ini mencegah alur UI menjanjikan penggabungan subtitle sebelum backend tersedia.
+
+
+## 15. Revisi target lintas platform — 17 November 2026
+
+Target distribusi mencakup Windows/macOS/Linux pada x86_64 dan ARM64, mengikuti matriks PRD bagian 11. Bukti 89 tes P0 hanya berasal dari macOS Intel dan tidak membuktikan portabilitas.
+
+Tambahkan spike packaging awal per kombinasi sebelum menutup T01/T23: minimum versi OS/distro, toolchain/build runner, runtime Python, FFmpeg native, format paket dan browser sumber sesi. Kontrak engine/API tetap bersama; isolasikan operasi platform untuk folder/data directory, izin browser/keyring, pembukaan file, instance lock, signal serta penghentian process tree. Tidak memakai Unix process group sebagai satu-satunya implementasi cancel Windows.
+
+CI dipetakan ke enam kombinasi dengan label build-native/emulasi yang jujur. Runner yang tidak tersedia merupakan gap verifikasi, bukan alasan menandai kombinasi itu lulus. Uji paket pada lingkungan bersih, bukan hanya interpreter developer. Rilis dilakukan bertahap berdasarkan gate setiap kombinasi; roadmap dan estimasi lama untuk OS pertama harus dihitung ulang untuk scope global ini.
+
+
+## 16. Keputusan T01 dan bukti koneksi ulang
+
+Gunakan [Web Platform Matrix](web-platform-matrix.md) untuk baseline OS/browser/toolchain dan mode container. T01 selesai sebagai keputusan dan audit ketersediaan input build; implementasi installer/CI lintas platform tetap T23/T25. Windows ARM64 memerlukan solusi FFmpeg native karena extra portable yang dipatok tidak memiliki wheel target tersebut.
+
+Tambahkan subtugas container ke T23: image glibc amd64/arm64, versi dependency dipatok, user nonroot, volume DB/download persisten, bind port host lokal, lifecycle worker, Docker/Podman smoke test serta verifikasi native per arsitektur. Mode guest saja sebelum bridge sesi host dirancang. Runtime Podman amd64 lokal telah diuji koneksi memakai image Node yang tersedia; ini bukan bukti image aplikasi berhasil.
+
+T02 masih menunggu sumber yang dapat diakses. Probe tersanitasi dan opt-in tersedia di `tools/spikes/check_source_session.py`; audit dependency di `tools/spikes/check_platform_dependencies.py`. Kedua script tidak diimpor engine produksi.
+
+
+## 17. Kompatibilitas z3 dan gate verifikasi pemutaran
+
+Bukti terbaru terdapat di [Web Readiness Report](web-readiness-report.md). Adapter sekarang menerima redeem HTTPS relatif/same-origin dengan regresi origin asing, HTTP, kredensial dan port berbeda, serta melaporkan verifikasi browser aktif tanpa mencoba claim. Tidak ada perubahan tier atau bypass batas sesi.
+
+T02 belum selesai sampai daftar format sesi aktual dapat dibaca. Jangan menganggap browser cookies menyertakan seluruh konteks verificationToken yang dipakai player publik. Spike lanjutan harus menetapkan jalur integrasi browser yang diizinkan atau menyatakan alur tersebut belum didukung. API/UI T17–T19 harus membedakan akun dikenali, playback verification required, dan media ready. Penutupan task berdasarkan maxHeight saja tidak memenuhi acceptance.

@@ -37,7 +37,7 @@ def media_server(tmp_path_factory):
             timeout=30,
         )
 
-    for height in (720, 1080, 2160):
+    for height in (360, 720, 1080, 2160):
         generate(
             "-f",
             "lavfi",
@@ -79,7 +79,7 @@ def media_server(tmp_path_factory):
         '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",DEFAULT=YES,'
         'AUTOSELECT=YES,LANGUAGE="en",URI="audio.m3u8"',
     ]
-    for height in (720, 1080, 2160):
+    for height in (360, 720, 1080, 2160):
         master += [
             f"#EXT-X-STREAM-INF:BANDWIDTH={height * 2000},"
             f'RESOLUTION={height * 16 // 9}x{height},CODECS="avc1.42c033,mp4a.40.2",AUDIO="audio"',
@@ -94,6 +94,19 @@ def media_server(tmp_path_factory):
         "-c",
         "copy",
         str(root / "direct.mp4"),
+    )
+    generate(
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=blue:s=1920x800:r=2:d=1",
+        "-c:v",
+        "libx264",
+        "-threads",
+        "1",
+        "-preset",
+        "ultrafast",
+        str(root / "crop.mp4"),
     )
     requests = []
 
@@ -161,7 +174,7 @@ def media_server(tmp_path_factory):
     worker.join(timeout=5)
 
 
-@pytest.mark.parametrize("quality,height", [("1080", 1080), ("best", 2160)])
+@pytest.mark.parametrize("quality,height", [("480", 360), ("1080", 1080), ("best", 2160)])
 def test_hls_download_and_audio_merge(media_server, tmp_path, quality, height):
     base, _, _, binary = media_server
     result = download_video(f"{base}/master.m3u8", Settings(quality=quality, output=tmp_path))
@@ -257,3 +270,28 @@ def test_batch_transfers_next_film_after_missing_url(media_server, tmp_path):
     assert [result.error is None for result in results] == [True, False, True]
     assert len(list(tmp_path.glob("*.mp4"))) == 1
     assert len(list(tmp_path.glob("*.mkv"))) == 1
+
+
+def test_cropped_media_reports_actual_dimensions(media_server):
+    _, root, _, binary = media_server
+    probe = subprocess.run(
+        [binary, "-hide_banner", "-i", str(root / "crop.mp4")],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert "1920x800" in probe.stderr
+    assert "Video: h264" in probe.stderr
+
+
+@pytest.mark.parametrize("token", ["expired-token", "invalid-token"])
+def test_rejected_session_token_fails_without_artifact(media_server, tmp_path, token):
+    from yt_dlp.utils import DownloadError
+
+    base, _, _, _ = media_server
+    with pytest.raises(DownloadError, match="401"):
+        download_video(
+            f"{base}/signed/master.m3u8?t={token}",
+            Settings(quality="best", output=tmp_path),
+        )
+    assert not list(tmp_path.iterdir())

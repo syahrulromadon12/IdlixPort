@@ -175,3 +175,69 @@ def test_probe_is_bounded_and_preserves_authentication(monkeypatch):
     assert requests[0].headers["Range"] == "bytes=0-262143"
     assert (item["width"], item["height"]) == (1920, 800)
     assert item["session_required_height"] == 1080
+
+
+def test_same_origin_relative_redeem_is_supported(monkeypatch):
+    from urllib.parse import urljoin
+
+    adapter, calls, _ = fixture_adapter(monkeypatch, limit=1080, gate=False)
+    original_api = adapter._api
+    relative = "/api/watch/session/redeem"
+
+    def api(endpoint, video_id, page_url, *, body=None):
+        if endpoint == urljoin(page_url, relative):
+            calls.append((endpoint, body))
+            return original_api(
+                "https://player.majorplay.net/api/play", video_id, page_url, body=body
+            )
+        result = original_api(endpoint, video_id, page_url, body=body)
+        if result.get("kind") == "pentos":
+            result["redeemUrl"] = relative
+        return result
+
+    monkeypatch.setattr(adapter, "_api", api)
+    result = adapter._extract_next_movie(PAGE, "fixture")
+    assert result["session_max_height"] == 1080
+    assert any(url == urljoin(PAGE, relative) for url, _ in calls)
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://foreign.example/api/play",
+        "https://player.majorplay.net.evil.example/api/play",
+        "http://player.majorplay.net/api/play",
+        "https://user:secret@player.majorplay.net/api/play",
+        "https://z2.idlixku.com:8443/api/play",
+    ],
+)
+def test_redeem_rejects_untrusted_origins_and_credentials(monkeypatch, target):
+    adapter, _, _ = fixture_adapter(monkeypatch, gate=False)
+    original_api = adapter._api
+
+    def api(*args, **kwargs):
+        result = original_api(*args, **kwargs)
+        if result.get("kind") == "pentos":
+            result["redeemUrl"] = target
+        return result
+
+    monkeypatch.setattr(adapter, "_api", api)
+    with pytest.raises(ExtractorError, match="Provider sesi berubah"):
+        adapter._extract_next_movie(PAGE, "fixture")
+
+
+def test_browser_verification_is_reported_without_claim_attempt(monkeypatch):
+    adapter, calls, sleeps = fixture_adapter(monkeypatch)
+    original_api = adapter._api
+
+    def api(*args, **kwargs):
+        result = original_api(*args, **kwargs)
+        if result.get("kind") == "gate":
+            result["verification"] = {"siteKey": "public-fixture-key"}
+        return result
+
+    monkeypatch.setattr(adapter, "_api", api)
+    with pytest.raises(ExtractorError, match="verifikasi pemutaran di browser"):
+        adapter._extract_next_movie(PAGE, "fixture")
+    assert not sleeps
+    assert not any(endpoint.endswith("/api/watch/session/claim") for endpoint, _ in calls)

@@ -210,6 +210,11 @@ class IdlixIE(DooplayIE):
         session = self._api(
             urljoin(url, f"/api/watch/play-info/movie/{quote(video_id)}"), video_id, url
         )
+        if session.get("verification"):
+            raise ExtractorError(
+                "Situs meminta verifikasi pemutaran di browser; adapter belum mendukung alur ini.",
+                expected=True,
+            )
         if session.get("kind") == "gate":
             try:
                 delay = max(0, (session["unlockAt"] - session["serverNow"]) / 1000) + 0.5
@@ -229,9 +234,17 @@ class IdlixIE(DooplayIE):
         if session.get("kind") != "pentos" or not session.get("claim"):
             raise ExtractorError("Jenis sesi player IDLIX belum didukung.", expected=True)
         redeem_url = player_url(session.get("redeemUrl"), url)
-        host = (urlsplit(redeem_url).hostname or "").lower()
-        if urlsplit(redeem_url).scheme != "https" or not (
-            host == "majorplay.net" or host.endswith(".majorplay.net")
+        redeem_parts = urlsplit(redeem_url)
+        host = (redeem_parts.hostname or "").lower()
+        same_origin = (
+            redeem_parts.scheme == urlsplit(url).scheme
+            and redeem_parts.netloc == urlsplit(url).netloc
+        )
+        if (
+            redeem_parts.scheme != "https"
+            or redeem_parts.username is not None
+            or redeem_parts.password is not None
+            or not (same_origin or host == "majorplay.net" or host.endswith(".majorplay.net"))
         ):
             raise ExtractorError("Provider sesi berubah; adapter perlu diperbarui.", expected=True)
         stream = self._api(

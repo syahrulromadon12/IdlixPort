@@ -152,3 +152,46 @@ Penggabungan menggunakan soft subtitle dan remux tanpa encoding ulang video, buk
 - Satu unduhan aktif tidak menghalangi pemeriksaan film berikutnya: satu slot inspeksi terpisah dengan batas jaringan bersama.
 - Subtitle dapat diaktifkan/dimatikan di player uji; pilihan terpisah/tanpa subtitle berfungsi; kegagalan subtitle tidak menjadi keberhasilan palsu.
 - Hasil lokal dapat dibuka tanpa mengunduh salinan kedua; pembukaan file/folder hanya memakai artifact atau folder terdaftar.
+
+
+## 11. Keputusan P0 — 17 November 2026
+
+Target produk adalah Windows, macOS, dan Linux, masing-masing x86_64 dan ARM64 (aarch64). Keenam kombinasi merupakan target engineering, bukan dukungan yang sudah terbukti. Rilis dapat bertahap per kombinasi; paket yang belum lulus gate tidak boleh dilabeli didukung. Python tetap menjadi engine bersama, dengan lapisan platform untuk lifecycle proses, folder, keyring/cookies, dan launcher.
+
+Matriks target distribusi:
+
+| OS | CPU target | Bentuk paket yang direncanakan | Status bukti saat ini |
+|---|---|---|---|
+| Windows | x86_64 | Installer `.exe` | Belum diuji |
+| Windows | ARM64 | Installer native bila toolchain/dependensi lolos spike | Belum diuji; emulasi bukan bukti native |
+| macOS | x86_64 (Intel) | `.app` dalam ZIP | Tes Python lokal lulus; bundle belum diuji |
+| macOS | ARM64 (Apple Silicon) | `.app` dalam ZIP | Belum diuji; paket terpisah sebelum mempertimbangkan universal binary |
+| Linux | x86_64 | Paket portabel `.tar.gz` dengan launcher | Belum diuji |
+| Linux | ARM64 (aarch64) | Paket portabel `.tar.gz` dengan launcher | Belum diuji |
+
+Minimum versi OS, baseline distro/glibc Linux, toolchain dan tersedianya binary FFmpeg/runtime untuk setiap kombinasi harus ditetapkan melalui spike packaging sebelum rilis kombinasi itu. Linux tidak berarti semua distro; CPU ARM 32-bit, Windows x86 32-bit, musl dan platform lain di luar matriks belum menjadi target. Tidak mengasumsikan satu build macOS menghasilkan semua paket.
+
+Browser UI mengikuti browser default OS. Sumber sesi dipilih dari browser/profil yang tersedia dan terverifikasi per OS/CPU. Firefox menjadi kandidat baseline lintas platform; Chrome/Chromium/Edge dipertimbangkan sesuai platform, Safari khusus macOS. Ini daftar kandidat pengujian, bukan janji semua browser bekerja di semua kombinasi. Bukti P0 yang sudah ada hanya pembacaan Safari pada macOS Intel; penerimaan sesi oleh IDLIX tetap belum terbukti.
+
+Gate setiap kombinasi: build pada runner yang sesuai, runtime dan FFmpeg yang cocok arsitektur, clean install, launch, download sintetis, subtitle, cancel/process-tree, restart, akses folder, izin sesi browser, upgrade/uninstall dan pemeriksaan keamanan paket. Signing/notarization macOS serta signing/peringatan keamanan Windows harus diuji dan didokumentasikan; paket belum ditandatangani tidak boleh dipromosikan seolah bebas peringatan.
+
+Validasi stream memakai FFmpeg yang dibundel; FFprobe bukan prasyarat terpisah. Scope global ini menggantikan pembatasan macOS Intel sebelumnya.
+
+
+Bukti dan keterbatasan tercatat di [Web Readiness Report](web-readiness-report.md). Pembacaan cookies Safari berhasil, tetapi verifikasi akun/varian live terblokir koneksi sumber. Keputusan scope tidak berarti dukungan akun atau akses 1080p telah terbukti.
+
+
+## 12. Matriks platform dan mode container
+
+Baseline engineering final mengikuti [Web Platform Matrix](web-platform-matrix.md): Windows 11 24H2, macOS 14 dan Ubuntu 24.04 LTS pada x86_64/ARM64. Paket container menargetkan linux/amd64 dan linux/arm64. Keputusan ini menggantikan baseline yang sebelumnya belum ditetapkan, tetapi dukungan aktual hanya diumumkan setelah gate tiap paket lulus.
+
+Mode native menargetkan integrasi sesi browser lokal. Container awal menyediakan guest dan volume persisten; tidak menjanjikan pembacaan cookies Safari/Chrome di host. Integrasi akun container memerlukan bridge terpisah. Target guest maupun container tidak menjamin akses 1080p.
+
+
+## 13. Temuan live z3/Chrome dan verifikasi pemutaran
+
+Pada 17 November 2026, URL pengguna pada z3 mengenali guest dengan batas sesi 720p dan konteks Chrome non-guest dengan batas 1080p. Daftar format aktual belum terbukti. Safari tidak dijadikan syarat karena pengguna melaporkan akses situs diblokir di Safari; bukti ini terbatas lingkungan pengguna, bukan semua instalasi Safari.
+
+Status koneksi produk harus membedakan izin browser, sesi akun dikenali, verifikasi pemutaran diperlukan, dan format siap dipilih. Jangan menawarkan unduh 1080p berdasarkan maxHeight saja. Login di tab baru dan pemeriksaan otomatis tetap alur UX, tetapi tidak menjamin akses media jika situs meminta verifikasi pemutaran terpisah. UI harus memberi status dan tindakan yang jujur, bukan mencoba bypass CAPTCHA atau menampilkan Terhubung penuh sebelum manifest terbaca.
+
+Akses Keychain macOS dapat muncul kembali pada proses baru. Jangan menjanjikan satu klik persetujuan meniadakan izin OS. T17/T18 perlu membuktikan pengelolaan sesi dalam memori selama koneksi aktif agar tidak memulai pembacaan Keychain berulang tanpa kebutuhan; tidak menyimpan password/key dekripsi untuk menghindari dialog. Lihat [hasil live](web-readiness-report.md).
