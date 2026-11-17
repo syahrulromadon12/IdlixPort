@@ -6,7 +6,7 @@ Tanggal: 16 November 2026. Status: rancangan untuk implementasi, belum aplikasi 
 
 IdlixPort menjadi aplikasi web lokal/self-hosted untuk memeriksa sumber video, memilih kualitas yang tersedia, mengantrekan unduhan, dan mengambil hasilnya melalui browser. Engine Python yang ada dipertahankan; antarmuka utama berpindah dari terminal ke browser. CLI tetap berfungsi.
 
-Target pengalaman: **buka IdlixPort → tempel URL → periksa → pilih resolusi → unduh → simpan file**. Pengguna tidak perlu membuka atau login ke situs IDLIX untuk alur guest. Aplikasi tidak membaca cookies browser, meminta password IDLIX, atau menggunakan akun bersama.
+Target pengalaman: **buka IdlixPort → tempel URL → periksa → pilih resolusi → unduh → simpan file**. Pengguna tidak perlu membuka atau login ke situs IDLIX untuk alur guest. Mode guest tidak membaca cookies. Pengguna dapat mengaktifkan sesi browser lokal dengan persetujuan eksplisit; aplikasi tidak meminta password IDLIX atau menggunakan akun bersama.
 
 **Target 1080p tanpa login masih bergantung pada sumber.** Implementasi web dapat mengunduh 1080p jika sumber menyediakan stream 1080p yang dapat diakses tanpa autentikasi. Mengubah UI atau memindahkan pengunduhan ke server tidak menambah hak akses sesi. Jika IDLIX hanya memberikan maksimum 720p kepada guest, 1080p dari sumber itu tidak bisa dijadikan janji rilis.
 
@@ -30,7 +30,7 @@ Belum terbukti: akses IDLIX guest 1080p saat ini, film IDLIX penuh sampai selesa
 
 ## 3. Sasaran dan ukuran keberhasilan
 
-1. Instalasi baru dapat menjalankan web dengan satu command setelah dependencies terpasang.
+1. Pengguna umum dapat memasang paket aplikasi dan menjalankan launcher tanpa Python, pip, atau terminal; instalasi source tetap tersedia untuk developer.
 2. Pengguna menyelesaikan alur periksa sampai file akhir melalui browser tanpa terminal untuk setiap film.
 3. Pilihan kualitas berasal dari hasil inspeksi sumber/sesi, bukan daftar resolusi statis yang seolah tersedia.
 4. Sumber uji tanpa login yang memiliki 1080p menghasilkan file 1080p berisi video dan audio, lolos pemeriksaan decode.
@@ -55,7 +55,7 @@ Pisahkan status rilis: **web berfungsi**, **1080p tanpa login pada sumber uji te
 
 ### Ditunda
 
-Katalog/pencarian seluruh IDLIX, player streaming, akun aplikasi, cookies/login IDLIX, server multiuser publik, Redis/Celery, distributed workers, transcoding/upscale, auto-scan semua mirror, subtitle yang dibakar ke video, dan token renewal otomatis. Engine CLI generic tetap ada; web tidak harus membuka semua extractor generic pada MVP.
+Katalog/pencarian seluruh IDLIX, player streaming, akun aplikasi, server multiuser publik, Redis/Celery, distributed workers, transcoding/upscale, auto-scan semua mirror, subtitle yang dibakar ke video, dan token renewal otomatis. Engine CLI generic tetap ada; web tidak harus membuka semua extractor generic pada MVP.
 
 ## 5. Alur pengguna dan perilaku kualitas
 
@@ -67,7 +67,7 @@ Katalog/pencarian seluruh IDLIX, player streaming, akun aplikasi, cookies/login 
 6. Worker meminta sesi baru ketika job mulai, lalu memvalidasi ulang kualitas. Jika pilihan tidak lagi tersedia, job gagal dengan `QUALITY_CHANGED` dan tindakan **Periksa ulang**. Tidak ada fallback diam-diam untuk pilihan konkret.
 7. Pada `Terbaik tersedia`, kualitas ditentukan kembali saat mulai dan pilihan efektif ditampilkan. Perubahan menjadi kualitas lebih rendah ditandai di riwayat.
 8. Selesai berarti transfer, merge, validasi file, dan pencatatan artifact berhasil. Progres transfer 100% belum berarti seluruh job selesai.
-9. Tombol **Simpan file** mentransfer hasil dari disk backend ke browser. Pada web lokal disk backend adalah komputer pengguna; pada self-hosted jarak jauh ini transfer kedua. Browser menentukan folder penyimpanan, bukan server.
+9. Dalam mode lokal, hasil disimpan langsung ke folder tujuan dan tersedia aksi **Buka file/Buka folder**, tanpa transfer ulang melalui browser. Endpoint simpan melalui browser disediakan untuk penggunaan jarak jauh di tahap lanjutan.
 
 Batch: semua URL divalidasi sebelum membuat batch; setelah validasi tiap film diperiksa dan memilih kualitasnya sendiri. Kebijakan batch adalah `Terbaik tersedia` atau `Maksimum 1080p` dengan hasil efektif yang jelas. Pilihan konkret 1080p per film menggunakan alur inspeksi; jika tidak tersedia film itu gagal dan film berikutnya tetap diproses.
 
@@ -116,4 +116,39 @@ Sebelum UI besar dibangun, periksa sampel kecil film target tanpa cookies melalu
 
 ## 9. Hasil analisis
 
-Layak dibangun sekarang: web tanpa login, pemilihan resolusi, antrean, progres, dan pengambilan file dengan engine yang ada. Belum layak dijanjikan: 1080p IDLIX untuk sesi guest. Implementasi dimulai dari pembuktian sumber dan satu jalur end-to-end, lalu batch dan deployment. Detail tersedia di [rencana implementasi](IMPLEMENTASI-WEB.md).
+Layak dibangun sekarang: web tanpa login, pemilihan resolusi, antrean, progres, dan pengambilan file dengan engine yang ada. Belum layak dijanjikan: 1080p IDLIX untuk sesi guest. Implementasi dimulai dari pembuktian sumber dan satu jalur end-to-end, lalu batch dan deployment. Detail tersedia di [rencana implementasi](web-implementation-plan.md).
+
+
+## 10. Revisi pengalaman pengguna — 17 November 2026
+
+Bagian ini memperjelas dan menggantikan ketentuan sebelumnya yang bertentangan, terutama penundaan sesi browser, instalasi melalui terminal, dan pengambilan ulang hasil lokal.
+
+### Aplikasi dan distribusi
+
+Antarmuka utama adalah web lokal dengan engine Python yang dipakai bersama CLI. Launcher menyalakan backend, membuka browser default setelah readiness berhasil, menangani port terpakai dan instance yang sudah berjalan. Pilih OS rilis pertama sebelum menentukan paket installer; OS lain hanya dinyatakan didukung setelah diuji. Instalasi source untuk developer tidak menjadi ukuran kemudahan pengguna umum. Update dan uninstall harus menjelaskan preservasi pengaturan dan hasil unduhan.
+
+### Sesi browser otomatis
+
+Guest menjadi default. Jika pengguna membutuhkan akses akun, aplikasi menawarkan **Login di IDLIX** dan membuka tab baru. Pembacaan sesi memerlukan persetujuan eksplisit sekali saat fitur diaktifkan serta pemilihan browser/profil; izin OS tetap berlaku. Browser untuk UI dapat berbeda dari browser sumber sesi, sehingga aplikasi harus memastikan tab login dibuka pada browser/profil yang dipilih atau memberikan petunjuk yang jelas.
+
+Tidak ada tombol wajib **Sudah login**. Setelah tab login dibuka, UI menunjukkan **Menunggu login**. Ketika tab IdlixPort kembali aktif, backend lokal membaca ulang cookies dan memverifikasi sesi melalui sumber menggunakan URL film. Selama proses menghubungkan saja, pemeriksaan berkala boleh berjalan dengan jeda minimal 5 detik, maksimal 2 menit; satu pemeriksaan aktif, debounce event focus dan backoff saat gagal. Berhenti setelah berhasil, dibatalkan, timeout, atau fitur dinonaktifkan. Timeout menampilkan tindakan **Coba lagi**, bukan membaca cookies terus-menerus.
+
+Status **Terhubung** memerlukan bukti bahwa sumber menerima sesi akun; keberadaan cookies atau klik tombol login tidak cukup. Jika sumber tidak memberikan bukti yang memadai, status adalah **Sesi belum dapat diverifikasi**. Setelah verifikasi, perbarui pilihan kualitas. Sesi kedaluwarsa menawarkan hubungkan ulang; pembacaan ulang saat memulai job hanya dilakukan dalam cakupan persetujuan aktif. Pengguna dapat memutuskan koneksi; hentikan pemeriksaan dan hapus salinan sesi milik aplikasi, tanpa logout browser. Job aktif memakai sesi yang sedang berjalan; hentikan job tersebut sebelum pemutusan dinyatakan selesai.
+
+Cookies dan token tidak masuk API response, log, repository, atau server pihak lain. Simpan preferensi browser/profil, bukan password. Gunakan sesi dalam memori sejauh memungkinkan. Website remote tidak dapat memakai mekanisme pembacaan cookies lokal ini tanpa komponen penghubung tambahan, di luar MVP.
+
+### Subtitle dan hasil lokal
+
+Default subtitle Indonesia digabung sebagai track yang bisa dinyalakan/dimatikan dalam MKV jika tersedia. Pilihan lain adalah file subtitle terpisah atau tanpa subtitle. Jika Indonesia tidak tersedia, tampilkan pilihan bahasa lain; jangan mengganti bahasa diam-diam. Jika subtitle gagal, jangan menandai permintaan lengkap berhasil: pertahankan video dan tampilkan status hasil parsial serta opsi lanjut tanpa subtitle atau coba ulang.
+
+Penggabungan menggunakan soft subtitle dan remux tanpa encoding ulang video, bukan burn-in. Subtitle yang sudah dibakar pada gambar tidak dapat dimatikan. Kompatibilitas player dijelaskan. Folder tujuan dipilih melalui mekanisme lokal terkontrol, disimpan sebagai preferensi; frontend tidak boleh mengirim path bebas.
+
+### Acceptance tambahan
+
+- Pengguna non-IT pada instalasi bersih dapat memasang, membuka, mengunduh, dan menemukan hasil tanpa terminal; uji dengan pengguna dan catat bantuan yang diperlukan.
+- Login di tab lain terdeteksi saat kembali tanpa tombol konfirmasi; browser/profil salah, izin ditolak, timeout, dan sesi kedaluwarsa memiliki tindakan pemulihan.
+- Status terhubung tidak muncul untuk cookies invalid atau sesi guest; 1080p hanya ditawarkan jika sumber mengizinkan dan menyediakan formatnya.
+- Pemutusan koneksi menghentikan pembacaan sesi dan tidak menghapus cookies browser.
+- Satu unduhan aktif tidak menghalangi pemeriksaan film berikutnya: satu slot inspeksi terpisah dengan batas jaringan bersama.
+- Subtitle dapat diaktifkan/dimatikan di player uji; pilihan terpisah/tanpa subtitle berfungsi; kegagalan subtitle tidak menjadi keberhasilan palsu.
+- Hasil lokal dapat dibuka tanpa mengunduh salinan kedua; pembukaan file/folder hanya memakai artifact atau folder terdaftar.

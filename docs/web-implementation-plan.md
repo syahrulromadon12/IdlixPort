@@ -1,6 +1,6 @@
 # Rencana dan skema implementasi IdlixPort Web
 
-Tanggal: 16 November 2026. Pendamping [PRD](PRD-WEB.md). Seluruh nama modul, endpoint, dan command web di bawah adalah rancangan; belum tersedia pada source sekarang.
+Tanggal: 16 November 2026. Pendamping [PRD](web-prd.md). Seluruh nama modul, endpoint, dan command web di bawah adalah rancangan; belum tersedia pada source sekarang.
 
 ## 1. Arsitektur yang dipilih
 
@@ -23,7 +23,7 @@ flowchart LR
     A -->|stream file dari artifact ID| B
 ```
 
-Satu proses API Uvicorn, satu runner aktif, satu child job aktif. Jangan gunakan `--workers >1` atau auto-reload untuk instalasi operasional. Ambil lock OS pada data directory saat startup; instance kedua gagal jelas sebelum runner aktif. Gunakan SQLite WAL pada disk lokal, busy timeout, transaksi singkat dan klaim `UPDATE ... WHERE state='queued'` atomik. SQLite WAL mendukung pembaca bersamaan tetapi tetap satu penulis dan mensyaratkan host yang sama [3].
+Satu proses API Uvicorn, satu runner aktif, satu child download aktif dan satu child inspeksi aktif. Jangan gunakan `--workers >1` atau auto-reload untuk instalasi operasional. Ambil lock OS pada data directory saat startup; instance kedua gagal jelas sebelum runner aktif. Gunakan SQLite WAL pada disk lokal, busy timeout, transaksi singkat dan klaim `UPDATE ... WHERE state='queued'` atomik. SQLite WAL mendukung pembaca bersamaan tetapi tetap satu penulis dan mensyaratkan host yang sama [3].
 
 ## 2. Pemetaan source dan batas perubahan
 
@@ -179,7 +179,7 @@ Estimasi indikatif satu engineer, bukan janji durasi; API sumber, keamanan trans
 |---|---|---|---|
 | 0 — Bukti sumber | Baseline tes; guest inspect beberapa film target; catat tier/maxHeight/varian tanpa cookies; satu sumber uji 1080p tanpa login | Matriks bukti guest; putuskan apakah target IDLIX 1080p mungkin | 0,5–1 hari |
 | 1 — Kontrak engine dan jaringan | Quality choice, hooks, safe logger, cancellation subprocess, spike guard semua request | Tes entitlement/seleksi lama lulus; SSRF redirect/rebinding/segmen diblok | 2–3 hari |
-| 2 — Satu alur web | API, SQLite, runner satu child, input → inspect → pilih → download → artifact | Sumber sintetis 1080p diunduh sampai selesai via browser | 2–3 hari |
+| 2 — Satu alur web | API, SQLite, runner slot download dan inspeksi terpisah, input → inspect → pilih → download → artifact | Sumber sintetis 1080p diunduh sampai selesai via browser | 2–3 hari |
 | 3 — Reliability | Cancel, retry/resume kompatibel, recovery, disk penuh, token error, idempotency | Fault injection lulus; tidak orphan/status sukses palsu | 1–2 hari |
 | 4 — Batch dan UX | Antrean batch, polling/backoff, subtitle, riwayat, hapus file, mobile | Satu film gagal tidak menghentikan batch; refresh aman | 1–2 hari |
 | 5 — Packaging dan rilis | Extra web, command start, runbook, clean install, bukti aktual | Install baru → browser → file, tanpa langkah tersembunyi | 0,5–1 hari |
@@ -229,3 +229,18 @@ Dokumentasi diperiksa 16 November 2026; kontrak implementasi harus dicocokkan la
 ## 12. Baseline analisis saat ini
 
 Pada 16 November 2026, `.venv/bin/python -m pytest -q -p no:cacheprovider` berhasil: **62 passed in 5.86s**. Pengujian awal dalam sandbox menerima 8 error setup karena bind server HTTP loopback ditolak; pengulangan dengan izin server lokal membuat semua tes lulus. Ini bukti engine lokal sebelum perubahan web, bukan bukti akses IDLIX guest 1080p. Tidak ada perubahan runtime pada pekerjaan penyusunan dokumen ini.
+
+
+## 13. Penyesuaian implementasi — 17 November 2026
+
+Ikuti revisi bagian 10 PRD jika bertentangan dengan rancangan awal. Estimasi 7–12 hari sebelumnya belum mencakup installer dan sesi browser; estimasi ulang setelah spike pada OS rilis pertama.
+
+- Tambahkan layanan sesi lokal dengan state disconnected, connecting, connected, expired, dan error. Endpoint aktivasi memerlukan persetujuan; endpoint pemeriksaan tidak menerima path cookies atau profil bebas. Browser/profil berasal dari daftar yang diverifikasi backend. Pemeriksaan nonblocking berjalan pada slot inspeksi dan tidak membocorkan hasil cookies ke frontend.
+- Tangani focus/visibility pada UI untuk meminta pemeriksaan ulang ketika connecting; polling mengikuti batas PRD, hanya satu probe aktif. Verifikasi akun berdasarkan respons sumber, lalu invalidasi inspeksi lama dan perbarui kualitas. Spike harus membuktikan cookies browser diterima IDLIX; jangan menjanjikan kompatibilitas berdasarkan dukungan yt-dlp saja.
+- Job menyimpan referensi konteks sesi, bukan token. Resolusi ulang saat job mulai memakai konteks yang masih diizinkan. Session read dilakukan hanya selama koneksi aktif; pencabutan menghentikan job terkait sebelum membersihkan konteks aplikasi.
+- Runner mempunyai satu slot download dan satu slot inspeksi, dengan cancellation/process ownership terpisah. Pertahankan guard jaringan dan limiter bersama. Uji inspeksi saat transfer, logout/kedaluwarsa, race pemutusan, dan aplikasi restart. Persetujuan tersimpan tidak otomatis membuktikan sesi valid setelah restart.
+- Tambahkan konfigurasi subtitle off, separate, embed dan bahasa pilihan. Integrasikan subtitle serta postprocessor FFmpeg; MKV menjadi hasil embed. Rekam subtitle artifact dan hasil parsial dengan jelas. Uji remux tanpa perubahan stream video, track bahasa/default, bahasa tidak tersedia, serta kegagalan unduh atau mux subtitle.
+- Launcher mengelola readiness, instance lock, port alternatif, browser default, dan shutdown worker. Klik ulang membuka instance yang sama. Kemasan rilis harus mengikutsertakan runtime/dependensi yang diperlukan atau menyiapkannya tanpa command pengguna; validasi lisensi distribusi dependensi sebelum publikasi.
+- Folder dipilih melalui dialog lokal launcher atau daftar folder yang disetujui operator, menghasilkan ID folder backend. Buka file/folder hanya berdasarkan ID terdaftar; tanpa shell dan tanpa path bebas. Lokasi data/pengaturan stabil mengikuti OS, bukan current working directory launcher.
+- Milestone baru: M1 alur satu URL sampai hasil lokal; M2 launcher dan installer OS pertama; M3 sesi browser opsional terverifikasi; M4 batch dan pematangan distribusi. Sesi guest tetap dapat digunakan sebelum M3. Rilis yang mengklaim seluruh pengalaman revisi PRD mensyaratkan M2 dan M3 selesai, bukan hanya server web berjalan.
+- Tambahkan pengujian clean install, upgrade/uninstall dengan preservasi data, port terpakai, klik launcher dua kali, izin browser ditolak, focus berulang, timeout polling, sesi invalid, inspeksi saat download aktif, dan subtitle parsial. Perbarui README serta panduan pengguna agar jalur installer utama dan source install developer terpisah.

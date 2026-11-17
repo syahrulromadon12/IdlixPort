@@ -148,4 +148,4 @@ Tes unit menguji pemilihan format melalui engine yt-dlp asli dan adapter melalui
 
 Analisis kebutuhan, keputusan teknis, acceptance criteria, dan batas pengembangan tersedia di [docs/technical-design.md](docs/technical-design.md). Bukti pemeriksaan tersedia di [docs/validation-report.md](docs/validation-report.md).
 
-Rencana pengembangan antarmuka web tersedia di [PRD Web](docs/PRD-WEB.md) dan [rencana implementasi Web](docs/IMPLEMENTASI-WEB.md). Dokumen ini adalah rancangan; command web belum tersedia.
+Rencana pengembangan antarmuka web tersedia di [PRD Web](docs/web-prd.md) dan [rencana implementasi Web](docs/web-implementation-plan.md). Dokumen ini adalah rancangan; command web belum tersedia.
