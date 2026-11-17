@@ -146,4 +146,6 @@ ruff format --check src tests
 
 Tes unit menguji pemilihan format melalui engine yt-dlp asli dan adapter melalui respons fixture. Tes integrasi memakai server HTTP loopback dan video sintetis yang dibuat FFmpeg; tidak mengunduh film pihak ketiga. Tes integrasi dilewati jika FFmpeg tidak tersedia.
 
-Analisis kebutuhan, keputusan teknis, acceptance criteria, dan batas pengembangan tersedia di [docs/RANCANGAN.md](docs/RANCANGAN.md). Bukti pemeriksaan tersedia di [docs/VALIDASI.md](docs/VALIDASI.md).
+Analisis kebutuhan, keputusan teknis, acceptance criteria, dan batas pengembangan tersedia di [docs/technical-design.md](docs/technical-design.md). Bukti pemeriksaan tersedia di [docs/validation-report.md](docs/validation-report.md).
+
+Rencana pengembangan antarmuka web tersedia di [PRD Web](docs/PRD-WEB.md) dan [rencana implementasi Web](docs/IMPLEMENTASI-WEB.md). Dokumen ini adalah rancangan; command web belum tersedia.
