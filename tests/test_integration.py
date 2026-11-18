@@ -1,5 +1,6 @@
 """Transfer asli melalui HTTP lokal dengan video sintetis dan FFmpeg."""
 
+import hashlib
 import json
 import re
 import subprocess
@@ -123,6 +124,9 @@ def media_server(tmp_path_factory):
         def do_GET(self):
             requests.append((self.path, self.headers.get("Referer"), self.headers.get("Range")))
             base = f"http://127.0.0.1:{self.server.server_port}"
+            if self.path == "/expired.ts":
+                self.send_error(403)
+                return
             if self.path.startswith("/signed/"):
                 parts = urlsplit(self.path)
                 if parse_qs(parts.query).get("t") != ["fixture-token"]:
@@ -145,13 +149,16 @@ def media_server(tmp_path_factory):
                 self.path = "/master.m3u8"
             if self.path == "/direct.mp4" and self.headers.get("Range"):
                 data = (root / "direct.mp4").read_bytes()
-                start = int(re.fullmatch(r"bytes=(\d+)-", self.headers["Range"]).group(1))
+                match = re.fullmatch(r"bytes=(\d+)-(\d*)", self.headers["Range"])
+                start = int(match[1])
+                end = min(len(data) - 1, int(match[2])) if match[2] else len(data) - 1
                 self.send_response(206)
                 self.send_header("Content-Type", "video/mp4")
-                self.send_header("Content-Range", f"bytes {start}-{len(data) - 1}/{len(data)}")
-                self.send_header("Content-Length", str(len(data) - start))
+                self.send_header("Content-Range", f"bytes {start}-{end}/{len(data)}")
+                self.send_header("Content-Length", str(end - start + 1))
+                self.send_header("ETag", '"' + hashlib.sha256(data).hexdigest() + '"')
                 self.end_headers()
-                self.wfile.write(data[start:])
+                self.wfile.write(data[start : end + 1])
                 return
             super().do_GET()
 

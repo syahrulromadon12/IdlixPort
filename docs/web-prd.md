@@ -1,6 +1,6 @@
 # PRD IdlixPort Web
 
-Tanggal: 16 November 2026. Status: rancangan untuk implementasi, belum aplikasi web berjalan.
+Tanggal rancangan: 16 November 2026. Status 18 November: P1–P4 diimplementasikan, termasuk UI satu unduhan, sesi browser otomatis, cancel, retry/recovery dan riwayat hasil. Lihat [bukti dan panduan P2](web-usage.md); subtitle dan installer masih roadmap. Bukti Safari live tersedia di [Browser Sessions](web-browser-sessions.md).
 
 ## 1. Keputusan produk
 

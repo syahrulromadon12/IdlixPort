@@ -92,7 +92,7 @@ def ffmpeg_path(location=None):
         return None
 
 
-def options(settings, *, inspect=False):
+def options(settings, *, inspect=False, progress_hook=None, postprocessor_hook=None, logger=None):
     result = {
         "format": format_selector(settings.quality),
         "format_sort": ["res", "fps", "br"],
@@ -121,6 +121,12 @@ def options(settings, *, inspect=False):
         "cachedir": False,
         "ignoreerrors": False,
     }
+    if progress_hook is not None:
+        result["progress_hooks"] = [progress_hook]
+    if postprocessor_hook is not None:
+        result["postprocessor_hooks"] = [postprocessor_hook]
+    if logger is not None:
+        result["logger"] = logger
     binary = ffmpeg_path(settings.ffmpeg_location)
     if binary:
         result["ffmpeg_location"] = binary

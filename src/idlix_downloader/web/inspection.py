@@ -1,0 +1,134 @@
+"""Bounded metadata inspection; no media session URLs leave the worker."""
+
+import math
+import re
+import subprocess
+
+from yt_dlp.extractor.generic import GenericIE
+from yt_dlp.networking import Request
+
+from ..downloader import ffmpeg_path
+from ..extractor import IdlixIE
+from .errors import AppError
+from .quality import candidates
+
+MAX_FORMATS = 12
+SAMPLE_BYTES = 262144
+
+
+class LimitedFormats:
+    def _limit(self, result):
+        if len(result[0]) > MAX_FORMATS:
+            raise AppError("PROBE_LIMIT")
+        return result
+
+    def _extract_m3u8_formats_and_subtitles(self, *args, **kwargs):
+        return self._limit(super()._extract_m3u8_formats_and_subtitles(*args, **kwargs))
+
+    def _extract_mpd_formats_and_subtitles(self, *args, **kwargs):
+        return self._limit(super()._extract_mpd_formats_and_subtitles(*args, **kwargs))
+
+
+class WebIdlixIE(LimitedFormats, IdlixIE):
+    def _api(self, endpoint, *args, **kwargs):
+        evidence = getattr(self._downloader, "web_session_evidence", None)
+        if evidence is not None:
+            evidence["stage"] = (
+                "play_info"
+                if "/play-info/" in endpoint
+                else "claim"
+                if "/session/claim" in endpoint
+                else "metadata"
+                if "/api/movies/" in endpoint
+                else "provider"
+            )
+        result = super()._api(endpoint, *args, **kwargs)
+        if "/api/watch/play-info/" in endpoint:
+            evidence = getattr(self._downloader, "web_session_evidence", None)
+            if evidence is not None:
+                evidence["account_verified"] = result.get("viewerTier") in {
+                    "user",
+                    "member",
+                    "premium",
+                    "authenticated",
+                    "registered",
+                    "free",
+                }
+        return result
+
+    @classmethod
+    def ie_key(cls):
+        return "Idlix"
+
+
+class WebGenericIE(LimitedFormats, GenericIE):
+    @classmethod
+    def ie_key(cls):
+        return "Generic"
+
+
+def normalize_dimensions(info, downloader, referer):
+    formats = info.get("formats") or ([info] if info.get("url") else [])
+    if len(formats) > MAX_FORMATS:
+        raise AppError("PROBE_LIMIT")
+    for item in formats:
+        if item.get("height") or item.get("vcodec") == "none":
+            continue
+        if item.get("protocol") == "m3u8_native":
+            IdlixIE(downloader)._probe_dimensions(item, str(info.get("id", "probe")), referer)
+        elif item.get("protocol") in ("http", "https"):
+            binary = ffmpeg_path()
+            if not binary:
+                raise AppError("FFMPEG_MISSING")
+            with downloader.urlopen(
+                Request(
+                    item["url"],
+                    headers={"Range": f"bytes=0-{SAMPLE_BYTES - 1}", "Referer": referer},
+                )
+            ) as response:
+                sample = response.read(SAMPLE_BYTES)
+            result = subprocess.run(
+                [
+                    binary,
+                    "-hide_banner",
+                    "-protocol_whitelist",
+                    "pipe",
+                    "-format_whitelist",
+                    "mov,matroska,webm,mpegts,aac,mp3,ogg,flac",
+                    "-i",
+                    "pipe:0",
+                ],
+                input=sample,
+                capture_output=True,
+                timeout=15,
+            )
+            text = result.stderr.decode(errors="replace")
+            frame = re.search(r"Video:[^\r\n]*?[, ](\d{2,5})x(\d{2,5})(?=[ ,\[])", text)
+            if frame:
+                item["width"], item["height"] = map(int, frame.groups())
+                item["format_note"] = "dimensi dari sampel video"
+                if "Audio:" in text and item.get("acodec") is None:
+                    item["acodec"] = "unknown"
+    return info
+
+
+def estimates(info):
+    result = {}
+    duration = info.get("duration")
+    for choice, item in candidates(info):
+        size = item.get("filesize") or item.get("filesize_approx")
+        if size is None and isinstance(duration, (int, float)) and item.get("tbr"):
+            size = duration * item["tbr"] * 1000 / 8
+        if isinstance(size, (int, float)) and math.isfinite(size) and size > 0:
+            # Exact mux size is unknown when audio is separate; add advertised audio estimate.
+            if item.get("acodec") in (None, "none"):
+                audio = [f for f in info.get("formats", []) if f.get("vcodec") == "none"]
+                if audio and isinstance(duration, (int, float)):
+                    size += (
+                        duration
+                        * max((f.get("abr") or f.get("tbr") or 0) for f in audio)
+                        * 1000
+                        / 8
+                    )
+            result[choice.choice_id] = int(size)
+    return result

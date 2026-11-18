@@ -138,7 +138,7 @@ idlixport download 'https://z2.idlixku.com/movie/500-days-of-summer-2009' --cook
 ## Pengembangan dan pemeriksaan
 
 ```bash
-python -m pip install -e '.[dev,portable]'
+python -m pip install -e '.[dev,web,portable]'
 python -m pytest -q
 ruff check src tests
 ruff format --check src tests
@@ -148,4 +148,4 @@ Tes unit menguji pemilihan format melalui engine yt-dlp asli dan adapter melalui
 
 Analisis kebutuhan, keputusan teknis, acceptance criteria, dan batas pengembangan tersedia di [docs/technical-design.md](docs/technical-design.md). Bukti pemeriksaan tersedia di [docs/validation-report.md](docs/validation-report.md).
 
-Rencana pengembangan antarmuka web tersedia di [PRD Web](docs/web-prd.md) dan [rencana implementasi Web](docs/web-implementation-plan.md). Dokumen ini adalah rancangan; command web belum tersedia.
+Rencana pengembangan antarmuka web tersedia di [PRD Web](docs/web-prd.md) dan [rencana implementasi Web](docs/web-implementation-plan.md). UI lokal, sesi browser opt-in, alur satu unduhan, cancel/retry dan riwayat sudah tersedia: jalankan `idlixport web` setelah instalasi extra `web,portable`, lalu buka `http://127.0.0.1:8765/`. Lihat [panduan penggunaan web](docs/web-usage.md) untuk pilihan resolusi, folder hasil dan batas dukungan. Lihat [panduan sesi browser](docs/web-browser-sessions.md). Safari live telah terverifikasi dengan pilihan kelas 1080p dan sampel frame 1920×804; film penuh belum diuji sampai selesai. Subtitle belum tersedia dan guest tetap mengikuti batas/verifikasi sumber.

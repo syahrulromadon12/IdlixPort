@@ -177,15 +177,22 @@ def test_probe_is_bounded_and_preserves_authentication(monkeypatch):
     assert item["session_required_height"] == 1080
 
 
-def test_same_origin_relative_redeem_is_supported(monkeypatch):
+@pytest.mark.parametrize(
+    "relative,target",
+    [
+        ("/api/watch/session/redeem", "/api/watch/session/redeem"),
+        ("/watch/session/redeem", "/api/watch/session/redeem"),
+        ("/watch/session/redeem?fixture=value", "/api/watch/session/redeem?fixture=value"),
+    ],
+)
+def test_same_origin_relative_redeem_is_supported(monkeypatch, relative, target):
     from urllib.parse import urljoin
 
     adapter, calls, _ = fixture_adapter(monkeypatch, limit=1080, gate=False)
     original_api = adapter._api
-    relative = "/api/watch/session/redeem"
 
     def api(endpoint, video_id, page_url, *, body=None):
-        if endpoint == urljoin(page_url, relative):
+        if endpoint == urljoin(page_url, target):
             calls.append((endpoint, body))
             return original_api(
                 "https://player.majorplay.net/api/play", video_id, page_url, body=body
@@ -198,7 +205,7 @@ def test_same_origin_relative_redeem_is_supported(monkeypatch):
     monkeypatch.setattr(adapter, "_api", api)
     result = adapter._extract_next_movie(PAGE, "fixture")
     assert result["session_max_height"] == 1080
-    assert any(url == urljoin(PAGE, relative) for url, _ in calls)
+    assert any(url == urljoin(PAGE, target) for url, _ in calls)
 
 
 @pytest.mark.parametrize(

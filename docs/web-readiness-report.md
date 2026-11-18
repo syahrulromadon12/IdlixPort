@@ -124,3 +124,11 @@ Hasil regresi setelah dua perbaikan adapter: **96 passed in 10.38s** melalui sui
 Status T02 tetap parsial: bukti tier dan batas sesi guest/Chrome tersedia, tetapi daftar format, dimensi dan akses manifest aktual belum terverifikasi. Tidak menandai T02 atau P0 selesai berdasarkan batas 1080p saja.
 
 Referensi kontrak yang diperiksa: [API client publik](https://z3.idlixku.com/_next/static/chunks/196vz2-i834f1.js), [player publik](https://z3.idlixku.com/_next/static/chunks/1qfhjk592kyr3.js). Aset ber-hash dapat berubah dan bukan API resmi stabil.
+
+## P4 — Safari Session Validation (18 November 2026)
+
+Safari yang dipilih pengguna berhasil dibaca dengan persetujuan aktif. URL `https://z3.idlixku.com/movie/forget-me-not-2015?play=1` memberikan bukti akun diterima. HTTP 404 provider sebelumnya disebabkan `redeemUrl=/watch/session/redeem` yang relatif terhadap basis API; adapter kini memanggil `/api/watch/session/redeem` tanpa mengubah claim, countdown, verification atau entitlement.
+
+Manifest merujuk CDN persis `g2.akademivo.website`; host itu diverifikasi di bawah guard DNS/IP/TLS lalu ditambahkan ke default. Setelah koreksi, akun Safari memiliki batas 1080p dan pilihan kelas 1080p. Sampel maksimal 256 KiB menghasilkan frame 1920×804 (crop sinema). Alur API produksi consent/connected, inspeksi worker, disconnect dan pembersihan cookies juga lulus. Tidak ada film penuh yang diunduh.
+
+Probe guest tetap meminta verifikasi pemutaran dan melaporkan batas 720p. Format/frame guest aktual belum terbaca, sehingga T02 tidak dicentang penuh. P4 memiliki bukti akun live; ini tidak membuktikan IDLIX 1080p tanpa login atau keberhasilan transfer film sampai selesai. Detail dan hasil tes terdapat di [Browser Sessions](web-browser-sessions.md).

@@ -152,8 +152,19 @@ class IdlixIE(DooplayIE):
         try:
             with self._downloader.urlopen(Request(target, headers=headers)) as response:
                 sample = response.read(262144)
+            restricted = self._downloader.params.get("_idlixport_local_media")
+            input_args = (
+                [
+                    "-protocol_whitelist",
+                    "pipe",
+                    "-format_whitelist",
+                    "mov,matroska,webm,mpegts,aac,mp3,ogg,flac",
+                ]
+                if restricted
+                else []
+            )
             result = subprocess.run(
-                [ffmpeg.executable, "-hide_banner", "-i", "pipe:0"],
+                [ffmpeg.executable, "-hide_banner", *input_args, "-i", "pipe:0"],
                 input=sample,
                 capture_output=True,
                 timeout=15,
@@ -233,7 +244,19 @@ class IdlixIE(DooplayIE):
             )
         if session.get("kind") != "pentos" or not session.get("claim"):
             raise ExtractorError("Jenis sesi player IDLIX belum didukung.", expected=True)
-        redeem_url = player_url(session.get("redeemUrl"), url)
+        redeem_value = session.get("redeemUrl")
+        if isinstance(redeem_value, str):
+            redeem_value = unescape(redeem_value).strip()
+            relative = urlsplit(redeem_value)
+            # Current IDLIX returns this route relative to its API base, not
+            # the page root. Keep other absolute/relative provider URLs intact.
+            if (
+                not relative.scheme
+                and not relative.netloc
+                and relative.path == "/watch/session/redeem"
+            ):
+                redeem_value = "/api" + redeem_value
+        redeem_url = player_url(redeem_value, url)
         redeem_parts = urlsplit(redeem_url)
         host = (redeem_parts.hostname or "").lower()
         same_origin = (

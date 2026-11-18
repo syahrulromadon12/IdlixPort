@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>IdlixPort — Unduh dari tautan</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Langsung ke konten</a>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="IdlixPort beranda"><span class="brand-icon" aria-hidden="true">↙</span> Idlix<span>Port</span></a>
+    <div class="top-status"><span class="local-label">DI PERANGKATMU</span><span id="connection" class="connection">Menghubungkan…</span></div>
+  </header>
+  <main id="main" class="layout">
+    <aside class="rail" aria-label="Langkah pengunduhan">
+      <p class="eyebrow">DARI TAUTAN KE KOLEKSI</p>
+      <ol class="steps">
+        <li id="step-link" class="current" aria-current="step"><span>01</span><div><strong>Tempel tautan</strong><small>Film atau media pilihanmu</small></div></li>
+        <li id="step-quality"><span>02</span><div><strong>Pilih kualitas</strong><small>Lihat yang tersedia di sumber</small></div></li>
+        <li id="step-download"><span>03</span><div><strong>Simpan ke perangkat</strong><small>Pantau sampai selesai</small></div></li>
+      </ol>
+      <div class="rail-note"><span class="note-mark" aria-hidden="true">i</span><p>Kualitas mengikuti sumber. Kami tidak menaikkan resolusi video.</p></div>
+    </aside>
+    <section class="workspace" aria-label="Pengunduhan">
+      <div class="intro"><span class="mode">TANPA AKUN</span><h1>Mau simpan<br>film apa?</h1><p>Tempel tautan, periksa kualitas, lalu unduh ke perangkatmu.</p></div>
+      <details id="browser-session-panel" class="card session-panel">
+        <summary>Sesi IDLIX opsional <span id="session-badge">Tanpa akun</span></summary>
+        <p class="field-hint">Login berlangsung di situs IDLIX. Pilih profil browser yang sama dengan tempat kamu login.</p>
+        <label for="session-profile">Browser dan profil</label><select id="session-profile"></select>
+        <p id="session-no-profiles" class="field-hint" hidden>Belum ada profil browser yang dapat dibaca di mesin backend. Mode tanpa akun tetap tersedia.</p>
+        <label class="session-consent"><input id="session-consent" type="checkbox"> Saya mengizinkan IdlixPort membaca cookies IDLIX dari profil ini selama koneksi aktif.</label>
+        <p class="field-hint">Cookies hanya berada di memori. Izin OS/Keychain mungkin muncul. Aplikasi tidak meminta password IDLIX dan tidak melakukan logout browser.</p>
+        <p id="session-status" role="status" aria-live="polite"></p>
+        <p id="session-manual" class="field-hint" hidden>Buka <a id="session-login-link" target="_blank" rel="noopener noreferrer">situs IDLIX</a> pada profil pilihan, lalu kembali ke tab ini. Profil tab baru tidak dapat dipastikan otomatis. Jika browser aplikasi berbeda, salin alamat dan buka sendiri pada browser/profil yang dipilih.</p>
+        <div class="job-actions"><button id="session-connect" class="button secondary" type="button" disabled>Login di IDLIX</button><button id="session-retry" class="button secondary" type="button" hidden>Coba lagi</button><button id="session-disconnect" class="button secondary" type="button" hidden>Putuskan sesi</button></div>
+      </details>
+      <div id="notice" class="notice" role="alert" hidden></div>
+      <form id="inspect-form" class="card link-card">
+        <label for="source-url">Tautan film atau media</label>
+        <div class="input-row"><input id="source-url" name="url" type="url" required maxlength="8192" autocomplete="off" spellcheck="false" placeholder="https://…/movie/judul-film"><button id="inspect-button" class="button primary" type="submit" disabled>Periksa tautan <span aria-hidden="true">↗</span></button></div>
+        <p class="field-hint">Halaman IDLIX atau tautan MP4, HLS, dan DASH yang didukung.</p>
+        <button id="cancel-inspection" class="button secondary" type="button" hidden>Batalkan pemeriksaan</button>
+        <p id="inspection-status" class="inspection-status" role="status" aria-live="polite"></p>
+      </form>
+      <section id="selection" class="card selection" aria-labelledby="film-title" hidden>
+        <div class="film-heading"><span class="film-icon" aria-hidden="true">▶</span><div><p class="eyebrow">SUMBER DITEMUKAN</p><h2 id="film-title"></h2><p id="film-details" class="muted"></p></div></div>
+        <div class="section-heading"><h3>Pilih kualitas</h3><span id="source-limit" class="muted"></span></div>
+        <div id="qualities" class="qualities" role="radiogroup" aria-label="Resolusi tersedia"></div>
+        <p id="no-formats" class="muted" hidden>Belum ada format video dan audio dengan resolusi yang dapat dipastikan. Coba sumber lain.</p>
+        <div class="preferences"><div><label for="folder">Simpan di</label><select id="folder" aria-describedby="folder-hint"></select><small id="folder-hint">Tersimpan langsung di perangkat ini.</small></div><div><label for="subtitle">Subtitle</label><select id="subtitle" disabled><option>Belum tersedia</option></select><small>Penggabungan subtitle hadir pada tahap berikutnya.</small></div></div>
+        <details class="advanced"><summary>Pengaturan kualitas lanjutan</summary><label for="policy">Saat unduhan mulai</label><select id="policy"><option value="choice">Pertahankan resolusi pilihan</option><option value="max_1080">Tertinggi, maksimal 1080p</option><option value="best">Terbaik yang tersedia</option></select><p class="field-hint">Pilihan konkret tidak akan turun kualitas diam-diam. Sumber diperiksa ulang saat mulai.</p><p id="evidence" class="field-hint"></p></details>
+        <div class="download-footer"><div><strong id="selected-label">Pilih resolusi</strong><small id="estimated-size">Ukuran belum diketahui</small></div><button id="refresh-button" class="button secondary" type="button" hidden>Periksa ulang</button><button id="download-button" class="button primary" type="button" disabled>Unduh film <span aria-hidden="true">↓</span></button></div>
+      </section>
+      <section class="queue" aria-labelledby="queue-title"><div class="section-heading"><div><p class="eyebrow">PROSES DI PERANGKATMU</p><h2 id="queue-title">Unduhan</h2></div><span id="queue-count" class="count">0</span></div><div id="jobs"><div id="empty-jobs" class="empty"><span aria-hidden="true">↓</span><p>Belum ada unduhan.</p><small>Hasil dan progres akan muncul di sini.</small></div></div></section>
+      <details id="history" class="history card"><summary>Riwayat unduhan</summary>
+        <p class="field-hint">Attempt lama dan hasil tetap tercatat setelah aplikasi dimulai ulang.</p>
+        <div id="history-jobs"></div><p id="history-status" role="status"></p>
+        <div class="job-actions"><button id="history-prev" class="button secondary" type="button">Sebelumnya</button><button id="history-next" class="button secondary" type="button">Berikutnya</button><button id="history-refresh" class="button secondary" type="button">Muat ulang</button></div>
+      </details>
+      <footer class="footnote">Gunakan untuk konten yang boleh kamu unduh. Tab boleh ditutup; proses tetap berjalan selama IdlixPort aktif.</footer>
+    </section>
+  </main>
+</body>
+</html>

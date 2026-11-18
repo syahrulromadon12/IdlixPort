@@ -1,6 +1,6 @@
 # Rencana dan skema implementasi IdlixPort Web
 
-Tanggal: 16 November 2026. Pendamping [PRD](web-prd.md). Seluruh nama modul, endpoint, dan command web di bawah adalah rancangan; belum tersedia pada source sekarang.
+Tanggal: 16 November 2026. Pendamping [PRD](web-prd.md). P1–P4 tersedia, termasuk unduhan, sesi browser opt-in, UI lokal, cancel/retry dan riwayat. Lihat [panduan dan bukti P2](web-usage.md).
 
 ## 1. Arsitektur yang dipilih
 
@@ -191,12 +191,12 @@ Total awal sekitar 7–12 hari kerja setelah akses sumber jelas. Bila tahap 0 me
 Target packaging: extra `web` berisi FastAPI/Uvicorn; `portable` tetap FFmpeg. Command yang direncanakan, belum tersedia sekarang:
 
 ```bash
-cd /Users/syahrul/Documents/SoftwareDev/IdlixPort
+cd /path/to/IdlixPort
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[web,portable]'
 idlixport doctor
-idlixport web --host 127.0.0.1 --port 8765 --data-dir ./data
+idlixport web --port 8765 --data-dir ./data
 ```
 
 Buka `http://127.0.0.1:8765`. Perintah `web` menyiapkan database, mengambil instance lock, memulai runner, dan menampilkan error dependency/storage sebelum menerima job. Tanpa Redis, command worker manual, atau Node build.
@@ -276,3 +276,20 @@ T02 masih menunggu sumber yang dapat diakses. Probe tersanitasi dan opt-in terse
 Bukti terbaru terdapat di [Web Readiness Report](web-readiness-report.md). Adapter sekarang menerima redeem HTTPS relatif/same-origin dengan regresi origin asing, HTTP, kredensial dan port berbeda, serta melaporkan verifikasi browser aktif tanpa mencoba claim. Tidak ada perubahan tier atau bypass batas sesi.
 
 T02 belum selesai sampai daftar format sesi aktual dapat dibaca. Jangan menganggap browser cookies menyertakan seluruh konteks verificationToken yang dipakai player publik. Spike lanjutan harus menetapkan jalur integrasi browser yang diizinkan atau menyatakan alur tersebut belum didukung. API/UI T17–T19 harus membedakan akun dikenali, playback verification required, dan media ready. Penutupan task berdasarkan maxHeight saja tidak memenuhi acceptance.
+
+
+## 18. Status P1
+
+Fondasi telah diimplementasikan dan diverifikasi melalui 137 tes; lihat [Web Foundation](web-foundation.md). Ini hasil historis sebelum P2. Endpoint unduhan dan UI sekarang tersedia sesuai [Local Web Usage](web-usage.md).
+
+## 19. Status P2
+
+Alur inspeksi, pilihan resolusi, download, validasi artifact dan buka hasil lokal selesai. Folder dipilih dari daftar operator melalui `--download-dir`; browser tidak mengirim path. Subtitle tetap nonaktif sampai T20. Tes backend berjumlah 150 lulus; dua uji browser desktop/mobile dijalankan terpisah dan lulus. Bukti, API dan batas implementasi terdapat di [Local Web Usage](web-usage.md). T02 dan klaim IDLIX live 1080p tetap belum selesai.
+
+## 20. Status P3
+
+T14–T16 selesai pada macOS Intel. Cancel/kill process tree, recovery, retry maksimal tiga attempt, resume MP4 berbasis identitas kuat, riwayat berpaginasi dan hapus hasil dengan konfirmasi tersedia. HLS/DASH mulai ulang; seluruh URL media diekstrak ulang saat attempt mulai. Tabel additive attempts mempertahankan schema P1–P2. Bukti 166 tes backend/regresi dan dua uji browser terpisah serta batas platform tersedia di [Web Reliability and Queue](web-reliability.md). T02/live IDLIX tetap belum selesai.
+
+## 21. Status P4
+
+T17–T19 selesai sebagai implementasi dan validasi sesi otomatis. Browser/profile server-owned, opt-in, snapshot cookie RAM, auto-check ber-debounce, invalidasi metadata serta konteks worker tersedia. Safari live berhasil connected, inspeksi 1080p dan disconnect; sampel frame 1920×804 terbaca setelah koreksi API-relative redeem dan allowlist CDN persis. Tidak ada bypass verifikasi atau perubahan entitlement. Bukti 195 tes backend/regresi serta empat uji browser terpisah tersedia di [Browser Sessions](web-browser-sessions.md). T02 masih parsial untuk format guest; film live penuh, subtitle dan distribusi masih gate berikutnya.

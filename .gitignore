@@ -1,13 +1,102 @@
+# Python environments, bytecode and build output
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 *.egg-info/
-.pytest_cache/
-.ruff_cache/
 build/
 dist/
+
+# Tool caches and generated test/coverage reports
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+test-results/
+playwright-report/
+idlixport-browser-*/
+
+# Downloaded media, subtitles and private exported manifests
+# HLS .ts files stay covered by downloads/runtime directories: do not hide TypeScript.
 downloads/
+*.mp4
+*.mkv
+*.webm
+*.avi
+*.mov
+*.m4v
+*.m4a
+*.mp3
+*.aac
+*.srt
+*.vtt
+*.ass
+*.m3u8
+*.mpd
 *.part
+*.part-*
 *.ytdl
+*.ytdl-*
+.resume.json
+# Deliberately maintained synthetic media fixtures may be versioned here.
+!tests/fixtures/media/**
+
+# Local application state, logs and database backups
+/data/
+/runtime/
+/logs/
+/backups/
+*.log
+jobs.sqlite3
+jobs.sqlite3-*
+jobs.sqlite3.*
+session-preferences.json
+session-preferences.tmp
+instance.lock
+worker-inspect.lock
+worker-download.lock
+network-[0-9]*.lock
+
+# Credentials, exported cookies and copied browser authentication databases
+.env
+.env.*
+!.env.example
+!.env.*.example
+/secrets/
+/credentials/
 cookies*.txt
+cookies*.json
+*.cookies.txt
+*.cookies.json
+Cookies
+Cookies-*
+Cookies.binarycookies
+cookies.sqlite
+cookies.sqlite-*
+Local State
+Login Data
+Login Data-*
+/browser-profiles/
+/chrome-profile/
+/safari-profile/
+/headers*.txt
+
+# Personal task tracking; keep public design and user documentation versioned
+/docs/web-development-tasks.md
+
+# OS files and personal editor state
 .DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.idea/workspace.xml
+.idea/shelf/
+.vscode/*.local.json

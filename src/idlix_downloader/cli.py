@@ -27,6 +27,11 @@ def parser():
     )
     root.add_argument("--version", action="version", version=f"IdlixPort {__version__}")
     commands = root.add_subparsers(dest="command", required=True)
+    web = commands.add_parser("web", help="Jalankan fondasi API web lokal.")
+    web.add_argument("--port", type=int, default=8765)
+    web.add_argument("--data-dir", type=Path)
+    web.add_argument("--allow-host", action="append", default=None)
+    web.add_argument("--download-dir", action="append", type=Path, default=[])
     doctor = commands.add_parser("doctor", help="Periksa Python, yt-dlp, dan FFmpeg.")
     doctor.add_argument("--ffmpeg-location", help="Path binary atau direktori FFmpeg.")
     for command, help_text in (
@@ -136,6 +141,38 @@ def show_info(info):
 
 def main(argv=None):
     args = parser().parse_args(argv)
+    if args.command == "web":
+        try:
+            import uvicorn
+
+            from .web.app import create_app
+            from .web.config import WebConfig, default_data_dir
+        except ImportError:
+            print(
+                "Instal dependensi web: python -m pip install -e '.[web,portable]'", file=sys.stderr
+            )
+            return 1
+        try:
+            kwargs = {
+                "data_dir": args.data_dir or default_data_dir(),
+                "port": args.port,
+                "download_dirs": tuple(args.download_dir),
+            }
+            if args.allow_host:
+                kwargs["allowed_hosts"] = tuple(args.allow_host)
+            config = WebConfig(**kwargs)
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 1
+        uvicorn.run(
+            create_app(config),
+            host="127.0.0.1",
+            port=config.port,
+            proxy_headers=False,
+            access_log=False,
+            log_level="warning",
+        )
+        return 0
     if args.command == "doctor":
         binary = ffmpeg_path(args.ffmpeg_location)
         print(f"Python: {sys.version.split()[0]}")
