@@ -28,6 +28,7 @@ def parser():
     root.add_argument("--version", action="version", version=f"IdlixPort {__version__}")
     commands = root.add_subparsers(dest="command", required=True)
     web = commands.add_parser("web", help="Jalankan fondasi API web lokal.")
+    web.add_argument("--open-browser", action="store_true", help="Buka UI saat backend siap.")
     web.add_argument("--port", type=int, default=8765)
     web.add_argument("--data-dir", type=Path)
     web.add_argument("--allow-host", action="append", default=None)
@@ -164,6 +165,11 @@ def main(argv=None):
         except ValueError as error:
             print(str(error), file=sys.stderr)
             return 1
+        if args.open_browser:
+            from .web.launcher import launch
+
+            return launch(config)
+
         from .web.locking import FileLock
 
         instance = FileLock(config.data_dir / "instance.lock")

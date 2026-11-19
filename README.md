@@ -151,3 +151,8 @@ Analisis kebutuhan, keputusan teknis, acceptance criteria, dan batas pengembanga
 Rencana pengembangan antarmuka web tersedia di [PRD Web](docs/web-prd.md) dan [rencana implementasi Web](docs/web-implementation-plan.md). UI lokal, sesi browser opt-in, alur satu unduhan, cancel/retry dan riwayat sudah tersedia: jalankan `idlixport web` setelah instalasi extra `web,portable`, lalu buka `http://127.0.0.1:8765/`. Lihat [panduan penggunaan web](docs/web-usage.md) untuk pilihan resolusi, folder hasil dan batas dukungan. Lihat [panduan sesi browser](docs/web-browser-sessions.md). Safari live telah terverifikasi dengan pilihan kelas 1080p dan sampel frame 1920×804; film penuh belum diuji sampai selesai. Subtitle Indonesia otomatis dalam MKV jika tersedia, pilihan file terpisah/off, dan batch hingga 20 URL tersedia; lihat [panduan subtitle dan batch](docs/web-subtitles-and-batch.md). Guest tetap mengikuti batas/verifikasi sumber.
 
 Masalah login Safari, sesi tidak terbaca, atau startup instance ganda: lihat [troubleshooting sesi web](docs/web-session-troubleshooting.md).
+
+Di macOS, setelah instalasi `.[web,portable]`, klik dua kali
+`tools/launcher/IdlixPort.command` dari Finder. Launcher membuka browser setelah
+backend siap. Biarkan jendela Terminal launcher terbuka selama aplikasi dipakai.
+Dari terminal pada sistem lain, gunakan `idlixport web --open-browser`.

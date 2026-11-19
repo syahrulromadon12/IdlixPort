@@ -164,7 +164,8 @@ def create_app(config):
         except Exception:
             healthy = False
         return JSONResponse(
-            {"status": "ready" if healthy else "unavailable"}, status_code=200 if healthy else 503
+            {"status": "ready" if healthy else "unavailable", "application": "idlixport"},
+            status_code=200 if healthy else 503,
         )
 
     @app.get("/api/session")
