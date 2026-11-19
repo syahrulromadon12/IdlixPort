@@ -189,3 +189,21 @@ def test_revoked_session_during_fragment_transfer_cannot_complete(
     assert result["phase"] in {"downloading", "merging"}
     assert not result["files"]
     wait_state(app.state.sessions, {"expired"})
+
+
+def test_batch_binds_only_matching_source_and_disconnect_revokes_children(authenticated_client):
+    client, app, profile, _ = authenticated_client
+    connect(client, app, profile)
+    app.state.runner.stop()
+    response = client.post(
+        "/api/batches",
+        json={"urls": [URL, "http://source.example/master.m3u8"], "subtitle_mode": "off"},
+    )
+    assert response.status_code == 202, response.text
+    jobs = app.state.repository.batch(response.json()["id"])
+    first, second = [app.state.repository.get(ident) for ident in jobs]
+    assert first["payload"]["session_ref"] == app.state.sessions.reference
+    assert second["payload"]["session_ref"] is None
+    assert client.delete("/api/browser-session").status_code == 200
+    assert app.state.repository.get(jobs[0])["state"] == "cancelled"
+    assert app.state.repository.get(jobs[1])["state"] == "queued"

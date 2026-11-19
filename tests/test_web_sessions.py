@@ -237,3 +237,35 @@ def test_browser_session_api_rejects_paths_and_requires_csrf(session_environment
         assert client.post("/api/browser-session/probe", json={"cookies": []}).status_code == 422
         assert client.delete("/api/browser-session").json()["state"] == "disconnected"
         assert COOKIE_SECRET not in client.get("/api/browser-session").text
+
+
+def test_rejected_session_stops_without_masking_error_as_timeout(session_environment, monkeypatch):
+    manager, _, _, profile = session_environment
+    monkeypatch.setattr(
+        manager,
+        "_probe",
+        lambda reference: {
+            "code": "SESSION_EXPIRED",
+            "account_verified": False,
+            "media_ready": False,
+        },
+    )
+    manager.connect(profile.id, URL, True)
+    result = wait_state(manager, {"error"})
+    assert result["error"]["code"] == "SESSION_EXPIRED"
+    assert not result["account_verified"]
+
+
+def test_second_cli_instance_reports_conflict_without_startup_traceback(tmp_path, capsys):
+    from idlix_downloader.cli import main
+    from idlix_downloader.web.locking import FileLock
+
+    lock = FileLock(tmp_path / "instance.lock")
+    assert lock.acquire()
+    try:
+        assert main(["web", "--data-dir", str(tmp_path)]) == 1
+        captured = capsys.readouterr()
+        assert "Instance IdlixPort lain masih aktif" in captured.err
+        assert "Traceback" not in captured.err
+    finally:
+        lock.release()

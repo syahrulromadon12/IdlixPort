@@ -17,6 +17,17 @@ from ..downloader import validate_url
 from .locking import SlotPool
 
 
+class ScopedRedirectHandler(RedirectHandler):
+    """Never forward credentials across origins or outside the source API."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        old, new = urlsplit(req.full_url), urlsplit(newurl)
+        if (old.scheme, old.netloc) != (new.scheme, new.netloc) or not new.path.startswith("/api/"):
+            redirected.remove_header("Authorization")
+        return redirected
+
+
 @dataclass(frozen=True)
 class NetworkPolicy:
     hosts: tuple[str, ...]
@@ -153,7 +164,7 @@ def restricted_handler(policy, pool, budget=None):
                 urllib.request.ProxyHandler({}),
                 GuardedHTTPHandler(policy, context=self._make_sslcontext()),
                 urllib.request.HTTPCookieProcessor(cookiejar),
-                RedirectHandler(),
+                ScopedRedirectHandler(),
                 urllib.request.UnknownHandler(),
                 urllib.request.HTTPDefaultErrorHandler(),
                 urllib.request.HTTPErrorProcessor(),

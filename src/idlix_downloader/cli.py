@@ -164,6 +164,17 @@ def main(argv=None):
         except ValueError as error:
             print(str(error), file=sys.stderr)
             return 1
+        from .web.locking import FileLock
+
+        instance = FileLock(config.data_dir / "instance.lock")
+        if instance.path.exists() and not instance.acquire():
+            print(
+                "Instance IdlixPort lain masih aktif pada folder data ini. "
+                "Gunakan instance tersebut atau hentikan sebelum menjalankan lagi.",
+                file=sys.stderr,
+            )
+            return 1
+        instance.release()
         uvicorn.run(
             create_app(config),
             host="127.0.0.1",

@@ -319,3 +319,41 @@ def test_guarded_native_dash_transfer(public_route, tmp_path):
     assert result["effective_quality"]["quality_class"] == 1080
     assert result["artifacts"]
     assert any(".m4s" in path for path, _, _ in requests)
+
+
+def test_hls_rotation_across_every_verified_g7_host(public_route, tmp_path, monkeypatch):
+    from idlix_downloader.web.config import WebConfig
+
+    root, _, _ = public_route
+    hosts = [host for host in WebConfig(tmp_path).allowed_hosts if host.startswith("g7.")]
+    assert len(hosts) == 30
+    lookup = socket.getaddrinfo
+
+    def mapped(host, port, *args, **kwargs):
+        return lookup("source.example" if host in hosts else host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", mapped)
+    visited = set()
+    validate = NetworkPolicy.validate
+
+    def tracked(self, url):
+        result = validate(self, url)
+        if result.hostname in hosts:
+            visited.add(result.hostname)
+        return result
+
+    monkeypatch.setattr(NetworkPolicy, "validate", tracked)
+    playlist = ["#EXTM3U", "#EXT-X-VERSION:3", "#EXT-X-TARGETDURATION:1", "#EXT-X-MEDIA-SEQUENCE:0"]
+    for host in hosts:
+        playlist.extend(["#EXT-X-DISCONTINUITY", "#EXTINF:1,", "http://" + host + "/10800.ts"])
+    playlist.append("#EXT-X-ENDLIST")
+    (root / "rotating-video.m3u8").write_text("\n".join(playlist) + "\n")
+    (root / "rotating-master.m3u8").write_text(
+        (root / "master.m3u8").read_text().replace("1080.m3u8", "rotating-video.m3u8")
+    )
+    cfg = config(tmp_path, "http://source.example/rotating-master.m3u8")
+    cfg["allowed_hosts"] = ["source.example", *hosts]
+    result = run_job(cfg, Events(lambda event: None))
+    assert visited == set(hosts)
+    assert result["effective_quality"]["quality_class"] == 1080
+    assert result["artifacts"] and not result.get("partial")

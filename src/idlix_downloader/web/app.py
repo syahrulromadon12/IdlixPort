@@ -15,7 +15,6 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..downloader import ffmpeg_path
 from .errors import AppError
-from .files import Artifacts
 from .repository import Repository
 from .routes import install_routes
 from .runner import Runner
@@ -58,7 +57,8 @@ class LocalSecurity:
             if message["type"] == "http.disconnect":
                 return
             body.extend(message.get("body", b""))
-            if len(body) > 16384:
+            limit = 196608 if scope.get("path") == "/api/batches" else 16384
+            if len(body) > limit:
                 return await JSONResponse({"code": "BODY_TOO_LARGE"}, status_code=413)(
                     scope, receive, send
                 )
@@ -90,7 +90,7 @@ def create_app(config):
         repository = Repository(config.data_dir, config.queue_limit)
         runner = Runner(repository, config)
         app.state.repository, app.state.runner = repository, runner
-        app.state.artifacts = Artifacts(repository, runner.destinations)
+        app.state.artifacts = runner.artifacts
         sessions = Sessions(repository, config, runner)
         runner.sessions = app.state.sessions = sessions
         app.state.service = Service(

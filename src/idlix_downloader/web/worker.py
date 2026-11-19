@@ -51,6 +51,7 @@ def main():
                 "downloading",
                 "merging",
                 "validating",
+                "subtitles",
             ):
                 ensure_space(config["output"])
             emit(event)

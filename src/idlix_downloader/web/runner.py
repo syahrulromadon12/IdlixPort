@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .errors import AppError
 from .events import PHASES
-from .files import Destinations
+from .files import Artifacts, Destinations, ensure_space
 from .locking import FileLock
 from .processes import ProcessTree
 from .worker import MAX_MESSAGE
@@ -22,6 +22,7 @@ class Runner:
     def __init__(self, repository, config):
         self.repository, self.config = repository, config
         self.destinations = Destinations(repository.root, config.download_dirs)
+        self.artifacts = Artifacts(repository, self.destinations)
         self.lock = FileLock(repository.root / "instance.lock")
         self.stopped = threading.Event()
         self.threads = []
@@ -93,6 +94,39 @@ class Runner:
                 )
             else:
                 output = self.repository.root / "work" / job["id"]
+            recovery = {}
+            if job["payload"].get("video_source"):
+                parent = self.repository.get(job["payload"]["video_source"])
+                records = self.repository.artifacts_for(parent["id"])
+                record = next(
+                    (
+                        r
+                        for r in records
+                        if Path(r["relative_path"]).suffix in (".mp4", ".mkv", ".webm")
+                    ),
+                    None,
+                )
+                if record is None:
+                    raise AppError("ARTIFACT_UNAVAILABLE")
+                ensure_space(output, record["size_bytes"])
+                lease, _ = self.artifacts.acquire(record["id"])
+                name = "media" + Path(record["relative_path"]).suffix
+                try:
+                    with (output / name).open("xb") as destination:
+                        while chunk := lease.handle.read(1024 * 1024):
+                            if (
+                                self.stopped.is_set()
+                                or self.repository.get(job["id"])["cancel_requested"]
+                            ):
+                                raise AppError("CANCELLED")
+                            destination.write(chunk)
+                finally:
+                    lease.close()
+                recovery = {
+                    "reuse_video": name,
+                    "reuse_quality": parent["result"]["effective_quality"],
+                    "source_identity": parent["result"]["source_identity"],
+                }
             if self.stopped.is_set() or self.repository.get(job["id"])["cancel_requested"]:
                 raise AppError("CANCELLED")
             tree = ProcessTree(self.command(job))
@@ -107,6 +141,7 @@ class Runner:
                 "lock_dir": str(self.repository.root / "locks"),
                 "worker_lock": str(self.repository.root / f"worker-{job['kind']}.lock"),
                 "parent_pid": os.getpid(),
+                **recovery,
             }
             reference = job["payload"].get("session_ref")
             if reference:
@@ -191,6 +226,11 @@ class Runner:
                         "duration",
                         "estimates",
                         "resumed",
+                        "subtitles",
+                        "subtitle_status",
+                        "subtitle_error",
+                        "partial",
+                        "source_identity",
                     }:
                         raise AppError("WORKER_FAILED")
                 elif event.get("type") == "error":
@@ -229,9 +269,13 @@ class Runner:
                 tree.close()
             with self.mutex:
                 self.active.pop(job["id"], None)
+        if not failed and result and result.get("partial"):
+            error = AppError(result.get("subtitle_error", "SUBTITLE_FAILED")).public()
         self.repository.finish(
             job["id"],
-            ("interrupted" if self.stopped.is_set() else "failed") if failed else "completed",
+            ("interrupted" if self.stopped.is_set() else "failed")
+            if failed
+            else ("partial" if result.get("partial") else "completed"),
             result=None if failed else result,
             error=error,
         )

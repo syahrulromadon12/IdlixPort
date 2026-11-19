@@ -13,7 +13,7 @@ from .errors import AppError
 
 MAX_ATTEMPTS = 3
 
-TERMINAL = {"completed", "failed", "cancelled", "interrupted"}
+TERMINAL = {"completed", "failed", "cancelled", "interrupted", "partial"}
 
 
 class Repository:
@@ -61,6 +61,18 @@ class Repository:
                 "CREATE TABLE IF NOT EXISTS attempts (job_id TEXT PRIMARY KEY REFERENCES jobs(id), "
                 "root_id TEXT NOT NULL, parent_id TEXT UNIQUE, number INTEGER NOT NULL, "
                 "UNIQUE(root_id,number))"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS batches (id TEXT PRIMARY KEY, created REAL NOT NULL)"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS batch_items (batch_id TEXT REFERENCES batches(id), "
+                "position INTEGER, original_job_id TEXT REFERENCES jobs(id), "
+                "current_job_id TEXT REFERENCES jobs(id), PRIMARY KEY(batch_id,position))"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS batch_keys (key TEXT PRIMARY KEY, request_hash TEXT, "
+                "batch_id TEXT REFERENCES batches(id))"
             )
             db.execute("PRAGMA user_version=1")
         if os.name != "nt":
@@ -165,7 +177,7 @@ class Repository:
                 raise AppError("CONFLICT")
             if row["cancel_requested"]:
                 state, result, error = "cancelled", None, AppError("CANCELLED").public()
-            if state == "completed" and result is not None:
+            if state in ("completed", "partial") and result is not None:
                 if row["kind"] == "inspect":
                     db.execute(
                         "INSERT INTO inspections VALUES(?,?,?)",
@@ -283,6 +295,7 @@ class Repository:
                 "failed",
                 "cancelled",
                 "interrupted",
+                "partial",
             }:
                 raise AppError("CONFLICT")
             attempt = db.execute("SELECT * FROM attempts WHERE job_id=?", (job_id,)).fetchone()
@@ -303,6 +316,8 @@ class Repository:
                 raise AppError("QUEUE_FULL")
             payload = json.loads(row["payload"])
             payload.update(retry_of=job_id, root_job_id=root, attempt=number + 1)
+            if row["state"] == "partial":
+                payload["video_source"] = job_id
             ident, now = uuid.uuid4().hex, time.time()
             db.execute(
                 "INSERT INTO jobs(id,kind,payload,state,created,updated) "
@@ -311,6 +326,9 @@ class Repository:
             )
             db.execute("INSERT OR IGNORE INTO attempts VALUES(?,?,NULL,1)", (root, root))
             db.execute("INSERT INTO attempts VALUES(?,?,?,?)", (ident, root, job_id, number + 1))
+            db.execute(
+                "UPDATE batch_items SET current_job_id=? WHERE current_job_id=?", (ident, job_id)
+            )
             if key:
                 db.execute("INSERT INTO idempotency_keys VALUES(?,?,?)", (key, digest, ident))
             return ident
@@ -340,7 +358,12 @@ class Repository:
 
     def retry_available(self, job_id):
         job = self.get(job_id)
-        if job["kind"] != "download" or job["state"] not in {"failed", "cancelled", "interrupted"}:
+        if job["kind"] != "download" or job["state"] not in {
+            "failed",
+            "cancelled",
+            "interrupted",
+            "partial",
+        }:
             return False
         with self.connection() as db:
             row = db.execute("SELECT * FROM attempts WHERE job_id=?", (job_id,)).fetchone()
@@ -367,3 +390,124 @@ class Repository:
     def invalidate_inspections(self):
         with self.connection() as db:
             db.execute("UPDATE inspections SET expires=0")
+
+    def accept_video(self, job_id):
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT state,result FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if (
+                row
+                and row["state"] == "completed"
+                and json.loads(row["result"] or "{}")
+                .get("subtitle_status", {})
+                .get("accepted_without_subtitles")
+            ):
+                return
+            if (
+                not row
+                or row["state"] != "partial"
+                or db.execute("SELECT 1 FROM attempts WHERE parent_id=?", (job_id,)).fetchone()
+            ):
+                raise AppError("CONFLICT")
+            result = json.loads(row["result"])
+            result.update(
+                partial=False, subtitle_status={"mode": "off", "accepted_without_subtitles": True}
+            )
+            db.execute(
+                "UPDATE jobs SET state='completed',result=?,error=NULL,updated=? WHERE id=?",
+                (json.dumps(result), time.time(), job_id),
+            )
+
+    def batch_replay(self, key, digest):
+        with self.connection() as db:
+            row = db.execute("SELECT * FROM batch_keys WHERE key=?", (key,)).fetchone()
+        if row:
+            if row["request_hash"] != digest:
+                raise AppError("CONFLICT")
+            return row["batch_id"]
+        return None
+
+    def enqueue_batch(self, payloads, key, digest):
+        if not 1 <= len(payloads) <= 20:
+            raise AppError("INVALID_INPUT")
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if key:
+                old = db.execute("SELECT * FROM batch_keys WHERE key=?", (key,)).fetchone()
+                if old:
+                    if old["request_hash"] != digest:
+                        raise AppError("CONFLICT")
+                    return old["batch_id"]
+            count = db.execute(
+                "SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running','cancelling')"
+            ).fetchone()[0]
+            if count + len(payloads) > self.limit:
+                raise AppError("QUEUE_FULL")
+            batch, now = uuid.uuid4().hex, time.time()
+            db.execute("INSERT INTO batches VALUES(?,?)", (batch, now))
+            for position, payload in enumerate(payloads):
+                ident = uuid.uuid4().hex
+                data = {**payload, "batch_id": batch, "batch_position": position}
+                db.execute(
+                    "INSERT INTO jobs(id,kind,payload,state,created,updated) "
+                    "VALUES(?,'download',?,'queued',?,?)",
+                    (ident, json.dumps(data, allow_nan=False), now + position * 0.000001, now),
+                )
+                db.execute(
+                    "INSERT INTO batch_items VALUES(?,?,?,?)", (batch, position, ident, ident)
+                )
+            if key:
+                db.execute("INSERT INTO batch_keys VALUES(?,?,?)", (key, digest, batch))
+            return batch
+
+    def batch(self, batch_id):
+        with self.connection() as db:
+            if not db.execute("SELECT 1 FROM batches WHERE id=?", (batch_id,)).fetchone():
+                raise KeyError(batch_id)
+            return [
+                row[0]
+                for row in db.execute(
+                    "SELECT current_job_id FROM batch_items WHERE batch_id=? ORDER BY position",
+                    (batch_id,),
+                )
+            ]
+
+    def recent_batches(self):
+        with self.connection() as db:
+            return [
+                row[0]
+                for row in db.execute(
+                    "SELECT id FROM batches ORDER BY created DESC,id DESC LIMIT 20"
+                )
+            ]
+
+    def cancel_batch(self, batch_id):
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if not db.execute("SELECT 1 FROM batches WHERE id=?", (batch_id,)).fetchone():
+                raise KeyError(batch_id)
+            db.execute(
+                "UPDATE jobs SET cancel_requested=1,state=CASE WHEN state='queued' THEN "
+                "'cancelled' ELSE 'cancelling' END,updated=? "
+                "WHERE id IN (SELECT current_job_id FROM batch_items WHERE batch_id=?) "
+                "AND state IN ('queued','running')",
+                (time.time(), batch_id),
+            )
+
+    def can_accept_video(self, job_id):
+        with self.connection() as db:
+            return (
+                db.execute("SELECT 1 FROM attempts WHERE parent_id=?", (job_id,)).fetchone() is None
+            )
+
+    def batch_counts(self, batch_id):
+        with self.connection() as db:
+            return {
+                row[0]: row[1]
+                for row in db.execute(
+                    "SELECT jobs.state,COUNT(*) FROM batch_items "
+                    "JOIN jobs ON current_job_id=jobs.id "
+                    "WHERE batch_id=? GROUP BY jobs.state",
+                    (batch_id,),
+                )
+            }

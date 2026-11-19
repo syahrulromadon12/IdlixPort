@@ -13,8 +13,8 @@ const state = {
   folder: safeStore.get("idlixport.folder") || "default", cards: new Map(),
 };
 const active = (job) => ["queued", "running", "cancelling"].includes(job.state);
-const phases = { extracting: "Memeriksa sumber", waiting_source: "Menunggu sumber", downloading: "Mengunduh", merging: "Menggabungkan video dan audio", validating: "Memeriksa hasil" };
-const statuses = { queued: "Antre", completed: "Selesai", failed: "Gagal", cancelled: "Dibatalkan", interrupted: "Terhenti", cancelling: "Menghentikan" };
+const phases = { extracting: "Memeriksa sumber", waiting_source: "Menunggu sumber", downloading: "Mengunduh", merging: "Menggabungkan video dan audio", validating: "Memeriksa hasil", subtitles: "Menyiapkan subtitle" };
+const statuses = { partial: "Hasil parsial", queued: "Antre", completed: "Selesai", failed: "Gagal", cancelled: "Dibatalkan", interrupted: "Terhenti", cancelling: "Menghentikan" };
 function bytes(number) {
   if (!Number.isFinite(number)) return "Ukuran belum diketahui";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -27,8 +27,9 @@ function duration(number) {
   const minutes = Math.ceil(number / 60);
   return minutes >= 60 ? `${Math.floor(minutes / 60)} jam ${minutes % 60} menit` : `${minutes} menit`;
 }
-function notice(message = "") {
+function notice(message = "", owner = "") {
   const box = $("notice");
+  box.dataset.owner = owner;
   if (box.textContent !== message) box.textContent = message;
   box.hidden = !message;
 }
@@ -92,6 +93,7 @@ function renderInspection(job) {
   $("cancel-inspection").disabled = job.state === "cancelling";
   $("inspect-button").disabled = !state.ready || state.inspecting;
   if (active(job)) {
+    if ($("notice").dataset.owner === "inspection") notice();
     $("inspection-status").textContent = job.state === "queued" ? "Menunggu giliran pemeriksaan…" : `${phases[job.phase] || "Memeriksa sumber"}…`;
     $("selection").hidden = true;
     step(1);
@@ -100,9 +102,10 @@ function renderInspection(job) {
   if (job.state !== "completed") {
     $("inspection-status").textContent = "Pemeriksaan belum berhasil.";
     $("selection").hidden = true;
-    if (job.error) notice([job.error.message, job.error.action].filter(Boolean).join(" "));
+    if (job.error) notice([job.error.message, job.error.action].filter(Boolean).join(" "), "inspection");
     return;
   }
+  if ($("notice").dataset.owner === "inspection") notice();
   const signature = `${job.id}:${JSON.stringify(job.metadata)}`;
   $("inspection-status").textContent = "Pemeriksaan selesai.";
   if (state.signature !== signature) {
@@ -122,6 +125,16 @@ function renderInspection(job) {
       const detail = document.createElement("small"); detail.textContent = choice.audio_available ? `${choice.width || "?"} × ${choice.height}` : "Audio belum terkonfirmasi";
       label.append(radio, title, detail); $("qualities").append(label);
     }
+    const languages=job.metadata.subtitles || [];
+    $("subtitle-language").replaceChildren(...languages.map((language) => {
+      const option=document.createElement("option"); option.value=language.code;option.textContent=language.label;return option;
+    }));
+    const indonesia=languages.find((language) => language.code==="id") || languages.find((language)=>language.code.startsWith("id-"));
+    $("subtitle").value=indonesia ? "embed" : "off";
+    if (indonesia) $("subtitle-language").value=indonesia.code;
+    $("subtitle").disabled=!languages.length;
+    $("subtitle-language").disabled=!languages.length || !indonesia;
+    $("subtitle-hint").textContent=!languages.length ? "Sumber tidak menyediakan subtitle yang didukung." : indonesia ? "Indonesia tersedia; default digabung dalam MKV tanpa encode ulang video." : "Indonesia tidak tersedia. Pilih bahasa lain secara eksplisit atau lanjutkan tanpa subtitle.";
     $("no-formats").hidden = available.length > 0;
     $("policy").value = "choice";
     $("policy").disabled = !available.length;
@@ -175,6 +188,10 @@ function jobCard(job) {
       finally {inspect.disabled=false;}
     }); controls.append(inspect);
   }
+  if (job.can_continue) {
+    const proceed=element("button","button secondary continue-video","Lanjut tanpa subtitle");proceed.type="button";
+    proceed.addEventListener("click",()=>jobAction(proceed,job,"continue-without-subtitles"));controls.append(proceed);
+  }
   if (job.can_retry) {
     const retry = element("button", "button secondary retry-job", "Coba lagi"); retry.type = "button";
     retry.addEventListener("click", () => jobAction(retry, job, "retry")); controls.append(retry);
@@ -200,7 +217,7 @@ function jobCard(job) {
   if (job.error) {
     card.append(element("p", "job-error", job.error.message), element("p", "field-hint", job.error.action));
   }
-  if (job.state === "completed") {
+  if (["completed","partial"].includes(job.state)) {
     const file = job.files?.find((entry) => entry.available);
     if (file) {
       card.append(element("p", "job-progress", `${job.effective_quality?.quality_class || "?"}p · ${bytes(file.size_bytes)} · tersimpan di perangkat`));
@@ -210,6 +227,11 @@ function jobCard(job) {
       const folder = element("button", "button secondary open-folder", "Buka folder"); folder.type = "button";
       folder.addEventListener("click", () => action(folder, `/api/jobs/${job.id}/open-folder`));
       actions.append(open, folder); card.append(actions);
+      for (const subtitle of job.files.filter((entry)=>entry.available && entry.name.endsWith(".srt"))) {
+        const link=element("a","copy-link","Subtitle · "+subtitle.name);link.href=`/api/artifacts/${subtitle.id}/file`;link.download="";card.append(link);
+      }
+      const sub=job.subtitle_status;
+      if (sub) card.append(element("p","field-hint",sub.failed ? "Video tersedia; subtitle belum selesai." : sub.mode==="embed" ? `Subtitle ${sub.language} tergabung sebagai track MKV.` : sub.mode==="separate" ? `Subtitle ${sub.language} disimpan terpisah.` : "Tanpa subtitle."));
       const copy = element("a", "copy-link", "Simpan salinan lewat browser"); copy.href = `/api/artifacts/${file.id}/file`; copy.download = ""; card.append(copy);
     } else { card.append(element("p", "field-hint", "File sudah dipindahkan atau tidak tersedia.")); }
   }
@@ -248,6 +270,7 @@ async function refresh() {
     const data = await api("/api/jobs");
     connection(true); state.failures = 0;
     renderJobs(data.jobs);
+    renderBatches(data.batches || []);
     let inspection = data.jobs.find((job) => job.id === state.current && job.kind === "inspect");
     if (!state.current) inspection = data.jobs.find((job) => job.kind === "inspect");
     if (!inspection && state.current) {
@@ -273,6 +296,9 @@ async function bootstrap() {
       const option = document.createElement("option"); option.value = folder.id; option.textContent = folder.label; $("folder").append(option);
     }
     if (folders.folders.some((folder) => folder.id === state.folder)) $("folder").value = state.folder;
+    $("batch-folder").replaceChildren(...[...$("folder").options].map((option)=>option.cloneNode(true)));
+    $("batch-folder").value=$("folder").value;
+    $("batch-submit").disabled = false;
     state.ready = true; state.failures = 0; connection(true); $("inspect-button").disabled = false;
     await refresh();
   } catch (error) { connection(false); state.failures++; notice(errorMessage(error)); schedule(); }
@@ -301,6 +327,8 @@ $("download-button").addEventListener("click", async () => {
   if (state.submitting || !state.inspection) return;
   state.submitting = true; notice(); updateSelection();
   const payload = { inspection_id: state.inspection.id, folder_id: $("folder").value, policy: $("policy").value };
+  payload.subtitle_mode=$("subtitle").value;
+  if (payload.subtitle_mode!=="off") payload.subtitle_language=$("subtitle-language").value;
   if (payload.policy === "choice") payload.choice_id = currentChoice()?.choice_id;
   const serialized = JSON.stringify(payload);
   if (state.lastRequest !== serialized) { state.lastRequest = serialized; state.requestKey = crypto.randomUUID(); }
@@ -380,7 +408,7 @@ function renderSession(data) {
   $("session-disconnect").hidden = !locked;
   $("session-disconnect").disabled = data.state === "disconnecting";
   $("session-retry").hidden = !["error", "expired"].includes(data.state);
-  $("session-badge").textContent = data.state === "connected" ? "Terhubung" : data.account_verified ? "Akun dikenali" : data.state === "connecting" ? "Menunggu login" : "Tanpa koneksi akun";
+  $("session-badge").textContent = data.state === "connected" ? "Terhubung" : data.account_verified ? "Akun dikenali" : data.state === "connecting" ? "Menunggu login" : data.state === "expired" ? "Sesi kedaluwarsa" : data.state === "error" ? "Koneksi bermasalah" : "Tanpa koneksi akun";
   const messages = [sessionMessages[data.state]];
   if (data.account_verified && !data.media_ready) messages.push("Akun dikenali; akses media belum siap.");
   if (data.error) messages.push(data.error.message, data.error.action);
@@ -419,7 +447,7 @@ async function sessionAction(operation) {
   try {
     const options = {method:operation === "disconnect" ? "DELETE" : "POST"};
     if (operation === "connect") {
-      const url = $("source-url").value.trim();
+      const url = $("source-url").value.trim() || $("batch-urls").value.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
       if (!url) throw new Error("Tempel tautan film IDLIX terlebih dahulu.");
       options.body = {profile_id:$("session-profile").value,url,consent:$("session-consent").checked};
     }
@@ -441,3 +469,50 @@ $("session-disconnect").addEventListener("click", () => sessionAction("disconnec
 window.addEventListener("focus", () => sessionRefresh(true));
 document.addEventListener("visibilitychange", () => {if (!document.hidden) sessionRefresh(true);});
 sessionRefresh();
+
+$("subtitle").addEventListener("change",()=>{$("subtitle-language").disabled=$("subtitle").value==="off";});
+$("batch-subtitle").addEventListener("change",()=>{$("batch-language").disabled=["auto","off"].includes($("batch-subtitle").value);});
+let batchKey=null,batchRequest=null;
+$("batch-form").addEventListener("submit",async(event)=>{
+  event.preventDefault();$("batch-submit").disabled=true;notice();
+  try {
+    const urls=$("batch-urls").value.split(/\r?\n/).map((line)=>line.trim()).filter(Boolean);
+    if (!urls.length || urls.length>20) throw new Error("Masukkan 1–20 tautan, satu per baris.");
+    const body={urls,policy:$("batch-policy").value,folder_id:$("batch-folder").value,subtitle_mode:$("batch-subtitle").value};
+    if (["embed","separate"].includes(body.subtitle_mode)) body.subtitle_language=$("batch-language").value;
+    const serialized=JSON.stringify(body);
+    if (serialized!==batchRequest) {batchKey=crypto.randomUUID();batchRequest=serialized;}
+    const result=await api("/api/batches",{method:"POST",body,key:batchKey});
+    $("batch-status").textContent="Batch diterima. Proses tetap berjalan setelah tab ditutup.";
+    await refresh();
+  } catch(error) {notice(errorMessage(error));}
+  finally {$("batch-submit").disabled=false;}
+});
+const batchCards=new Map();
+function renderBatches(batches) {
+  for (const batch of batches) {
+    const signature=JSON.stringify(batch);
+    if (batchCards.get(batch.id)?.signature===signature) continue;
+    const stored=batchCards.get(batch.id);
+    const card=element("article","card batch-summary");card.dataset.batchId=batch.id;
+    card.append(element("h3","",`Batch · ${batch.total} film`));
+    const counts=batch.counts;
+    card.append(element("p","field-hint",`${statuses[batch.state] || "Memproses"} · ${counts.completed||0} selesai · ${counts.partial||0} parsial · ${counts.failed||0} gagal · ${counts.cancelled||0} dibatalkan`));
+    const actions=element("div","job-actions");
+    const detail=element("button","button secondary batch-detail","Lihat film");detail.type="button";
+    const content=stored?.content || element("div","batch-children");if (!stored) content.hidden=true;
+    if (!content.hidden) detail.textContent="Muat ulang film";
+    detail.addEventListener("click",async()=>{
+      detail.disabled=true;
+      try {const data=await api(`/api/batches/${batch.id}`);content.replaceChildren(...data.jobs.map(jobCard));content.hidden=false;detail.textContent="Muat ulang film";}
+      catch(error){notice(errorMessage(error));}finally{detail.disabled=false;}
+    });actions.append(detail);
+    if (["queued","running"].includes(batch.state)) {
+      const cancel=element("button","button secondary cancel-batch","Batalkan batch");cancel.type="button";
+      cancel.addEventListener("click",async()=>{await action(cancel,`/api/batches/${batch.id}/cancel`);refresh();});actions.append(cancel);
+    }
+    card.append(actions,content);
+    if (stored) stored.node.replaceWith(card);else $("batch-results").prepend(card);
+    batchCards.set(batch.id,{signature,node:card,content});
+  }
+}

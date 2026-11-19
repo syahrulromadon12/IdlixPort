@@ -1,6 +1,6 @@
 # Rencana dan skema implementasi IdlixPort Web
 
-Tanggal: 16 November 2026. Pendamping [PRD](web-prd.md). P1–P4 tersedia, termasuk unduhan, sesi browser opt-in, UI lokal, cancel/retry dan riwayat. Lihat [panduan dan bukti P2](web-usage.md).
+Tanggal: 16 November 2026. Pendamping [PRD](web-prd.md). P1–P5 tersedia, termasuk unduhan, sesi browser opt-in, UI lokal, cancel/retry dan riwayat. Lihat [panduan dan bukti P2](web-usage.md).
 
 ## 1. Arsitektur yang dipilih
 
@@ -293,3 +293,7 @@ T14–T16 selesai pada macOS Intel. Cancel/kill process tree, recovery, retry ma
 ## 21. Status P4
 
 T17–T19 selesai sebagai implementasi dan validasi sesi otomatis. Browser/profile server-owned, opt-in, snapshot cookie RAM, auto-check ber-debounce, invalidasi metadata serta konteks worker tersedia. Safari live berhasil connected, inspeksi 1080p dan disconnect; sampel frame 1920×804 terbaca setelah koreksi API-relative redeem dan allowlist CDN persis. Tidak ada bypass verifikasi atau perubahan entitlement. Bukti 195 tes backend/regresi serta empat uji browser terpisah tersedia di [Browser Sessions](web-browser-sessions.md). T02 masih parsial untuk format guest; film live penuh, subtitle dan distribusi masih gate berikutnya.
+
+## 22. Status P5
+
+T20–T21 telah diimplementasikan: subtitle off/separate/embed, default Indonesia, hasil parsial dan recovery subtitle dengan video tersimpan, serta batch atomik maksimal 20 URL. Parent batch terpisah dari slot child jobs; retry mempertahankan posisi film. Detail perilaku, kontrak, bukti dan batas pengujian tersedia di [Web Subtitles and Batch](web-subtitles-and-batch.md). Launcher dan distribusi tetap P6.

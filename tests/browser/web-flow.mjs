@@ -83,7 +83,9 @@ try {
   assert.equal(job.state, 'completed');
   assert.equal(JSON.stringify(job).includes('SOURCE_SECRET'), false);
   await click('.job.completed .open-file');
+  await until(() => evaluate(`!document.querySelector('.job.completed .open-file').disabled`), 'Open-file request did not finish');
   await click('.job.completed .open-folder');
+  await until(() => evaluate(`!document.querySelector('.job.completed .open-folder').disabled`), 'Open-folder request did not finish');
   const asset = job.files[0];
   const response = await fetch(`${base}/api/artifacts/${asset.id}/file`);
   const bytes = Buffer.from(await response.arrayBuffer());

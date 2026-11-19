@@ -3,7 +3,7 @@
 import math
 import time
 
-PHASES = {"extracting", "waiting_source", "downloading", "merging", "validating"}
+PHASES = {"extracting", "waiting_source", "downloading", "merging", "validating", "subtitles"}
 
 
 class Events:

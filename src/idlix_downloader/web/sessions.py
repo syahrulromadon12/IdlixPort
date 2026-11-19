@@ -220,7 +220,7 @@ class Sessions:
                     continue
                 now = time.monotonic()
                 if now >= self.deadline:
-                    self.state, self.code = "error", "SESSION_TIMEOUT"
+                    self.state, self.code = "error", self.code or "SESSION_TIMEOUT"
                     continue
                 if now < self.next_probe:
                     continue
@@ -246,6 +246,7 @@ class Sessions:
                     "COOKIE_UNAVAILABLE",
                     "VERIFICATION_REQUIRED",
                     "SESSION_TIMEOUT",
+                    "SESSION_EXPIRED",
                 ):
                     self.state = "error"
                 else:

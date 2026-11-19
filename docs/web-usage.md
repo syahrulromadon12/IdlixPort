@@ -1,6 +1,6 @@
 # Local Web Usage
 
-Tanggal: 18 November 2026. Status: P1–P4 selesai pada macOS Intel; alur satu unduhan, sesi browser opt-in, cancel, retry dan riwayat tersedia. Installer, subtitle serta batch masih tahap berikutnya. Bukti ini tidak menyatakan dukungan seluruh OS/CPU sudah diuji.
+Tanggal: 18 November 2026. Status: P1–P5 selesai pada macOS Intel; alur satu unduhan, sesi browser opt-in, cancel, retry dan riwayat tersedia. Subtitle dan batch tersedia; installer masih tahap berikutnya. Bukti ini tidak menyatakan dukungan seluruh OS/CPU sudah diuji.
 
 ## Menjalankan dari source
 
@@ -13,7 +13,7 @@ Buka `http://127.0.0.1:8765/`. Jika server versi P1 masih berjalan, hentikan den
 
 1. Tempel URL halaman film atau media yang didukung, lalu pilih **Periksa tautan**.
 2. Pilih kartu kualitas yang tersedia. Default memilih kualitas tertinggi sampai 1080p dengan audio; dimensi frame ditampilkan terpisah. Menu lanjutan menyediakan kebijakan maksimum 1080p atau terbaik.
-3. Pilih folder yang tersedia, lalu **Unduh film**. Subtitle saat ini dinonaktifkan dengan penjelasan; belum ada penggabungan subtitle.
+3. Pilih folder yang tersedia, lalu **Unduh film**. Pilih subtitle: Indonesia dalam MKV menjadi default jika tersedia; pilihan tanpa subtitle dan file terpisah juga tersedia.
 4. Pantau antrean, fase dan progres. Gunakan **Batalkan** untuk menghentikan pekerjaan aktif dan **Coba lagi** untuk attempt gagal/terhenti. Setelah selesai, pilih **Buka file** atau **Buka folder**. Hasil sudah tersimpan lokal; **Simpan salinan lewat browser** bersifat opsional.
 
 Jika inspeksi kedaluwarsa setelah sepuluh menit, pilih **Periksa ulang**. Pekerjaan yang sudah diterima tetap diproses meskipun inspeksinya kemudian kedaluwarsa. Format diekstrak ulang saat mulai dan pilihan konkret gagal dengan `QUALITY_CHANGED` jika berubah; tidak turun resolusi diam-diam.
@@ -28,7 +28,7 @@ idlixport web --download-dir "$HOME/Movies/IdlixPort"
 
 Opsi dapat diulang. Browser hanya menerima label/ID folder, bukan path bebas. Folder yang sama perlu didaftarkan kembali setelah restart agar hasilnya dapat dibuka melalui aplikasi. File tidak dipindahkan ketika konfigurasi berubah. Opsi `--data-dir` khusus mengatur penyimpanan aplikasi, bukan folder hasil; jangan arahkan ke direktori yang sudah berisi file lain.
 
-Default host adalah `z3.idlixku.com`, `majorplay.net`, subdomain provider tersebut, dan CDN persis `g2.akademivo.website` yang diverifikasi pada P4. `--allow-host` mengganti seluruh daftar default; operator harus menyebut semua host sumber/CDN yang sudah diverifikasi. Host lain, redirect ke alamat privat, proxy serta downloader jaringan FFmpeg ditolak. Direct MP4/HLS/DASH harus berada pada host yang disetujui. Jangan memakai opsi ini sebagai cara menonaktifkan kontrol jaringan.
+Default host adalah `z3.idlixku.com`, `majorplay.net`, subdomain provider tersebut, CDN persis `g2.akademivo.website` yang diverifikasi pada P4, serta `g7.aspireheightsacademy.digital`, `g7.akademivo.website`, `g7.edubambu.store` dan `g7.horizonacademy.site` beserta 26 host rotasi g7 lain yang diverifikasi pada audit unduhan The Intern. Daftar exact-host lengkap berada di `src/idlix_downloader/web/config.py`; lihat [audit rotasi CDN](web-session-troubleshooting.md#koreksi-audit-rotasi-cdn). `--allow-host` mengganti seluruh daftar default; operator harus menyebut semua host sumber/CDN yang sudah diverifikasi. Host lain, redirect ke alamat privat, proxy serta downloader jaringan FFmpeg ditolak. Direct MP4/HLS/DASH harus berada pada host yang disetujui. Jangan memakai opsi ini sebagai cara menonaktifkan kontrol jaringan.
 
 Buka file/folder memakai aplikasi OS tanpa shell. Linux memerlukan `xdg-open` serta sesi desktop; lingkungan headless dapat memakai salinan browser. Mode container belum diuji sebagai distribusi aplikasi; tombol buka lokal akan berlaku pada mesin backend, bukan mesin browser.
 
@@ -88,3 +88,7 @@ IDLIXPORT_BROWSER_TESTS=1 python -m pytest -q -p no:cacheprovider tests/test_web
 ```
 
 Aset HTML/CSS/JS disertakan sebagai package data. Tidak diperlukan Node pada runtime aplikasi. Lihat [Web Foundation](web-foundation.md) untuk kontrak backend P1 dan [PRD](web-prd.md) untuk scope rilis selanjutnya.
+
+Panduan subtitle, hasil parsial dan batch tersedia di [Web Subtitles and Batch](web-subtitles-and-batch.md).
+
+Jika Safari sudah login tetapi aplikasi tetap menunggu atau menolak sesi, lihat [troubleshooting sesi](web-session-troubleshooting.md). Setelah memperbarui source, restart backend agar worker dan sesi memakai versi yang sama.

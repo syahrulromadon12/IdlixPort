@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
-from .schemas import ConnectRequest, DownloadRequest, InspectionRequest
+from .schemas import BatchRequest, ConnectRequest, DownloadRequest, InspectionRequest
 from .streaming import file_response
 
 ID = Annotated[str, ApiPath(pattern=r"^[a-f0-9]{32}$")]
@@ -86,7 +86,38 @@ def install_routes(app):
     def jobs(request: Request):
         service = request.app.state.service
         ids = list(dict.fromkeys(service.repository.active_ids() + service.repository.recent()))
-        return {"jobs": [service.snapshot(job_id) for job_id in ids]}
+        return {
+            "jobs": [service.snapshot(job_id) for job_id in ids],
+            "batches": [
+                service.batch_summary(ident) for ident in service.repository.recent_batches()
+            ],
+        }
+
+    @app.post("/api/batches", status_code=202)
+    def batch_create(body: BatchRequest, request: Request, idempotency_key: Key = None):
+        return {"id": request.app.state.service.batch_create(body, idempotency_key)}
+
+    @app.get("/api/batches")
+    def batches(request: Request):
+        service = request.app.state.service
+        return {
+            "batches": [
+                service.batch_snapshot(ident) for ident in service.repository.recent_batches()
+            ]
+        }
+
+    @app.get("/api/batches/{batch_id}")
+    def batch(batch_id: ID, request: Request):
+        return request.app.state.service.batch_snapshot(batch_id)
+
+    @app.post("/api/batches/{batch_id}/cancel")
+    def cancel_batch(batch_id: ID, request: Request, body: EmptyRequest | None = None):
+        request.app.state.repository.cancel_batch(batch_id)
+        return request.app.state.service.batch_snapshot(batch_id)
+
+    @app.post("/api/jobs/{job_id}/continue-without-subtitles")
+    def continue_video(job_id: ID, request: Request, body: EmptyRequest | None = None):
+        return request.app.state.service.continue_without_subtitles(job_id)
 
     @app.get("/api/history")
     def history(

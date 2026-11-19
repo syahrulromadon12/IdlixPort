@@ -1,5 +1,6 @@
 """Worker-only media adapter; untrusted URLs never reach an external downloader."""
 
+import hashlib
 import re
 import subprocess
 from contextlib import contextmanager
@@ -12,7 +13,8 @@ from yt_dlp.postprocessor.ffmpeg import FFmpegPostProcessor
 
 from ..downloader import Settings, ffmpeg_path, options, single_video
 from ..extractor import IdlixIE
-from .errors import AppError
+from . import subtitles
+from .errors import AppError, public_error
 from .events import SafeLogger
 from .files import ensure_space
 from .inspection import WebGenericIE, WebIdlixIE, estimates, normalize_dimensions
@@ -105,7 +107,7 @@ def entrypoint(url):
         raise AppError("NETWORK_BLOCKED")
 
 
-def run_job(config, events):
+def _fresh_job(config, events):
     payload = config["payload"]
     url = payload["url"]
     entrypoint(url)
@@ -133,6 +135,7 @@ def run_job(config, events):
                 "session_max_height": info.get("session_max_height"),
                 "duration": info.get("duration"),
                 "estimates": estimates(info),
+                "subtitles": subtitles.catalog(info),
             }
         effective, _selector, formats = select(
             info, payload.get("policy", "max_1080"), payload.get("choice")
@@ -162,36 +165,115 @@ def run_job(config, events):
             raise AppError("FFMPEG_MISSING")
         downloader.process_ie_result(info, download=True)
     events.phase("validating")
-    artifacts = []
-    for path in output.iterdir():
-        if path.suffix not in (".mp4", ".mkv", ".webm") or path.is_symlink():
-            continue
-        check = subprocess.run(
-            [
-                ffmpeg_path(),
-                "-hide_banner",
-                "-protocol_whitelist",
-                "file,pipe",
-                "-format_whitelist",
-                "mov,matroska,webm,mpegts,aac,mp3,ogg,flac",
-                "-i",
-                str(path),
-            ],
-            capture_output=True,
-            timeout=15,
-        )
-        text = check.stderr.decode(errors="replace")
-        if "Video:" not in text or "Audio:" not in text:
-            raise AppError("WORKER_FAILED")
-        frame = re.search(r"Video:[^\r\n]*?[, ](\d{2,5})x(\d{2,5})(?=[ ,\[])", text)
-        if not frame:
-            raise AppError("QUALITY_CHANGED")
-        width, height = map(int, frame.groups())
-        if effective["evidence"] != "label" and (
-            height != effective["height"] or (effective["width"] and width != effective["width"])
-        ):
-            raise AppError("QUALITY_CHANGED")
-        artifacts.append({"name": path.name, "size_bytes": path.stat().st_size})
-    if not artifacts:
+    videos = [path for path in output.iterdir() if path.suffix in (".mp4", ".mkv", ".webm")]
+    if len(videos) != 1:
         raise AppError("WORKER_FAILED")
-    return {"effective_quality": effective, "artifacts": artifacts, "resumed": resumed}
+    return finalize(config, events, videos[0], effective, info, resumed)
+
+
+def identity(info):
+    return hashlib.sha256(str(info.get("id", "")).encode()).hexdigest()
+
+
+def validate_video(path, effective):
+    if path.is_symlink() or not path.is_file():
+        raise AppError("WORKER_FAILED")
+    check = subprocess.run(
+        [
+            ffmpeg_path(),
+            "-hide_banner",
+            "-protocol_whitelist",
+            "file,pipe",
+            "-format_whitelist",
+            "mov,matroska,webm,mpegts,aac,mp3,ogg,flac",
+            "-i",
+            str(path),
+        ],
+        capture_output=True,
+        timeout=15,
+    )
+    text = check.stderr.decode(errors="replace")
+    if "Video:" not in text or "Audio:" not in text:
+        raise AppError("WORKER_FAILED")
+    frame = re.search(r"Video:[^\r\n]*?[, ](\d{2,5})x(\d{2,5})(?=[ ,\[])", text)
+    if not frame:
+        raise AppError("QUALITY_CHANGED")
+    width, height = map(int, frame.groups())
+    if effective["evidence"] != "label" and (
+        height != effective["height"] or (effective["width"] and width != effective["width"])
+    ):
+        raise AppError("QUALITY_CHANGED")
+    return text
+
+
+def finalize(config, events, video, effective, info, resumed=False, source_error=None):
+    validate_video(video, effective)
+    output = Path(config["output"])
+    payload = config["payload"]
+    paths = [video]
+    mode = payload.get("subtitle_mode", "off")
+    language = payload.get("subtitle_language")
+    result = {
+        "title": re.sub(
+            r"https?://\S+", "[URL]", str(info.get("title", payload.get("title", "Film")))
+        )[:200],
+        "effective_quality": effective,
+        "resumed": resumed,
+        "source_identity": config.get("source_identity") or identity(info),
+    }
+    try:
+        if source_error:
+            raise AppError(source_error)
+        with media_downloader(config, output, events) as downloader:
+            downloader.web_budget.disable()
+            paths, status = subtitles.complete(
+                info, downloader, video, output, mode, language, events
+            )
+        if status["mode"] == "embed":
+            text = validate_video(paths[0], effective)
+            if "Subtitle:" not in text:
+                raise AppError("SUBTITLE_FAILED")
+        result["subtitle_status"] = status
+    except Exception as error:
+        code = error.code if isinstance(error, AppError) else public_error(error)["code"]
+        if code == "SOURCE_UNAVAILABLE":
+            code = "SUBTITLE_FAILED"
+        paths = [video]
+        (output / "film.mkv").unlink(missing_ok=True)
+        result.update(
+            partial=True,
+            subtitle_error=code,
+            subtitle_status={"mode": mode, "language": language, "failed": True},
+        )
+    else:
+        if result["subtitle_status"]["mode"] == "embed":
+            video.unlink()
+            for path in output.glob("subtitle.*.srt"):
+                path.unlink()
+    events.phase("validating")
+    result["artifacts"] = [{"name": path.name, "size_bytes": path.stat().st_size} for path in paths]
+    return result
+
+
+def run_job(config, events):
+    if not config.get("reuse_video"):
+        return _fresh_job(config, events)
+    video = Path(config["output"]) / config["reuse_video"]
+    effective = config["reuse_quality"]
+    validate_video(video, effective)
+    info, error = {}, None
+    try:
+        events.phase("extracting")
+        with media_downloader(config, video.parent, events) as downloader:
+            if config.get("require_account"):
+                downloader.web_session_evidence = {}
+            info = single_video(downloader.extract_info(config["payload"]["url"], download=False))
+            if config.get("require_account") and not downloader.web_session_evidence.get(
+                "account_verified"
+            ):
+                raise AppError("SESSION_EXPIRED")
+            if identity(info) != config["source_identity"]:
+                raise AppError("SUBTITLE_UNAVAILABLE")
+    except Exception as failure:
+        error = public_error(failure)["code"]
+    return finalize(config, events, video, effective, info, source_error=error)

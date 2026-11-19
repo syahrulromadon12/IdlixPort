@@ -112,7 +112,7 @@ class Artifacts:
     def locate(self, artifact_id):
         record = self.repository.artifact(artifact_id)
         job = self.repository.get(record["job_id"])
-        if job["state"] != "completed":
+        if job["state"] not in ("completed", "partial"):
             raise AppError("CONFLICT")
         root = self.destinations.root(job["payload"].get("folder_id", "default"))
         parts = Path(record["relative_path"]).parts
@@ -163,7 +163,10 @@ class Artifacts:
         with self.lock:
             if self.readers[artifact_id]:
                 raise AppError("CONFLICT")
-            path, _, _ = self.locate(artifact_id)
+            path, record, _ = self.locate(artifact_id)
+            for ident in self.repository.active_ids():
+                if self.repository.get(ident)["payload"].get("video_source") == record["job_id"]:
+                    raise AppError("CONFLICT")
             try:
                 path.unlink()
             except OSError as error:
@@ -177,7 +180,7 @@ class Artifacts:
 
     def open_folder(self, job_id):
         job = self.repository.get(job_id)
-        if job["kind"] != "download" or job["state"] != "completed":
+        if job["kind"] != "download" or job["state"] not in ("completed", "partial"):
             raise AppError("CONFLICT")
         root = self.destinations.root(job["payload"].get("folder_id", "default"))
         path = root / job_id
@@ -215,6 +218,7 @@ class Artifacts:
             job = self.repository.get(job_id)
             if job["kind"] != "download" or job["state"] not in {
                 "completed",
+                "partial",
                 "failed",
                 "cancelled",
                 "interrupted",
@@ -223,7 +227,10 @@ class Artifacts:
             if any(self.readers[row["id"]] for row in self.repository.artifacts_for(job_id)):
                 raise AppError("CONFLICT")
             for ident in self.repository.active_ids():
-                if self.repository.get(ident)["payload"].get("retry_of") == job_id:
+                if job_id in (
+                    self.repository.get(ident)["payload"].get("retry_of"),
+                    self.repository.get(ident)["payload"].get("video_source"),
+                ):
                     raise AppError("CONFLICT")
             path = self.output_folder(job)
             try:

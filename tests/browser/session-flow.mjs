@@ -84,6 +84,9 @@ try {
   await evaluate(`window.dispatchEvent(new Event('focus'));document.dispatchEvent(new Event('visibilitychange'))`);
   await until(() => evaluate(`document.querySelector('#session-badge').textContent==='Terhubung'`),'Account not verified');
   await until(() => evaluate(`[...document.querySelectorAll('.choice strong')].some(e=>e.textContent==='1080p')`),'Choices not refreshed automatically');
+  // Successful reinspection clears its old error, but preserves unrelated errors.
+  assert.equal(await evaluate(`(()=>{const completed=state.inspection;renderInspection({...completed,state:'failed',error:{message:'Old inspection error',action:'Retry'}});renderInspection(completed);return document.querySelector('#notice').hidden;})()`),true);
+  assert.equal(await evaluate(`(()=>{notice('Unrelated download error');renderInspection(state.inspection);const text=document.querySelector('#notice').textContent;notice();return text;})()`),'Unrelated download error');
   assert.equal(await evaluate(`JSON.stringify(localStorage).includes('SYNTHETIC_COOKIE_SECRET')`),false);
   assert.equal(await evaluate(`document.querySelector('.mode').textContent`),'SESI AKUN TERHUBUNG');
   assert.equal(await evaluate(`document.documentElement.scrollWidth <= innerWidth`),true);

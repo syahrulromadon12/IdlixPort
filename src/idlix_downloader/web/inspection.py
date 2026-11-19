@@ -3,6 +3,7 @@
 import math
 import re
 import subprocess
+from urllib.parse import urlsplit
 
 from yt_dlp.extractor.generic import GenericIE
 from yt_dlp.networking import Request
@@ -30,6 +31,21 @@ class LimitedFormats:
 
 
 class WebIdlixIE(LimitedFormats, IdlixIE):
+    def _api_headers(self, endpoint, page_url):
+        headers = super()._api_headers(endpoint, page_url)
+        source, target = urlsplit(page_url), urlsplit(endpoint)
+        # IDLIX's API requires the existing browser access cookie as a Bearer.
+        # Never attach it to a provider, CDN, HTTP endpoint or another origin.
+        if (
+            source.scheme == target.scheme == "https"
+            and source.netloc == target.netloc
+            and target.path.startswith("/api/")
+        ):
+            cookie = self._get_cookies(endpoint).get("access_token")
+            if cookie and re.fullmatch(r"[A-Za-z0-9._~-]{1,8192}", cookie.value):
+                headers["Authorization"] = "Bearer " + cookie.value
+        return headers
+
     def _api(self, endpoint, *args, **kwargs):
         evidence = getattr(self._downloader, "web_session_evidence", None)
         if evidence is not None:

@@ -92,3 +92,7 @@ ruff format --check --no-cache src tests tools
 ```
 
 Harness browser membutuhkan Node 22+ dan Chrome; `CHROME_BIN` dapat menunjuk executable lain. Profil/data browser sintetis dipisahkan dari pengguna. Ada satu warning deprecation Starlette TestClient/httpx yang tidak menggagalkan tes. Integrasi memakai API internal yt-dlp yang dipatok; upgrade harus menjalankan ulang tes, tanpa fallback diam-diam ke salinan cookies disk.
+
+## Pembaruan kompatibilitas autentikasi
+
+Audit 18 November 2026 menemukan API pemutaran meminta Bearer dari cookie access token. Perbaikan scope header, redirect, penanganan sesi ditolak, startup instance ganda dan bukti live terbaru tersedia di [Web Session Troubleshooting](web-session-troubleshooting.md). Login atau playback browser saja tidak membuktikan adapter telah mengirim autentikasi yang benar.

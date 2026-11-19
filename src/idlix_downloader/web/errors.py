@@ -1,6 +1,16 @@
 """Public errors never contain raw provider messages or credentials."""
 
 ERRORS = {
+    "SUBTITLE_FAILED": (
+        "Subtitle atau penggabungannya gagal; video tetap tersedia.",
+        True,
+        "Coba subtitle lagi atau lanjutkan tanpa subtitle.",
+    ),
+    "SUBTITLE_UNAVAILABLE": (
+        "Bahasa subtitle pilihan tidak tersedia; video tetap tersedia.",
+        False,
+        "Periksa ulang bahasa atau lanjutkan tanpa subtitle.",
+    ),
     "BROWSER_UNAVAILABLE": (
         "Browser/profil tidak tersedia.",
         False,
@@ -39,7 +49,8 @@ ERRORS = {
     "SESSION_EXPIRED": (
         "Sesi sumber kedaluwarsa atau ditolak.",
         False,
-        "Periksa ulang akses di situs sumber, lalu coba lagi.",
+        "Login pada profil browser yang dipilih, lalu pilih Coba lagi. "
+        "Memutar film saja belum menjamin sesi terbaca.",
     ),
     "INVALID_INPUT": ("Input tidak valid.", False, "Periksa tautan dan pilihan Anda."),
     "INSPECTION_EXPIRED": ("Hasil pemeriksaan sudah kedaluwarsa.", True, "Periksa ulang tautan."),

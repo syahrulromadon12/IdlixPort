@@ -192,8 +192,11 @@ class IdlixIE(DooplayIE):
             return self._extract_next_movie(url, video_id)
         return self._extract_dooplay_page(url, video_id, webpage)
 
+    def _api_headers(self, endpoint, page_url):
+        return {"Referer": page_url, "Content-Type": "application/json"}
+
     def _api(self, endpoint, video_id, page_url, *, body=None):
-        headers = {"Referer": page_url, "Content-Type": "application/json"}
+        headers = self._api_headers(endpoint, page_url)
         value = self._download_json(
             endpoint,
             video_id,
