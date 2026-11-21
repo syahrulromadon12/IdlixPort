@@ -114,7 +114,7 @@ class DooplayIE(InfoExtractor):
 class IdlixIE(DooplayIE):
     IE_NAME = "idlix"
 
-    def _probe_dimensions(self, item, video_id, page_url):
+    def _probe_hls_streams(self, item, video_id, page_url):
         """Baca maksimal 256 KiB dari satu segmen/init untuk metadata frame."""
         ffmpeg = FFmpegPostProcessor(self._downloader)
         if not ffmpeg.available:
@@ -171,9 +171,13 @@ class IdlixIE(DooplayIE):
             )
         except (OSError, subprocess.TimeoutExpired) as error:
             raise ExtractorError("Pemeriksaan dimensi video gagal.", expected=True) from error
+        return result.stderr.decode(errors="replace")
+
+    def _probe_dimensions(self, item, video_id, page_url):
+        streams = self._probe_hls_streams(item, video_id, page_url)
         match = re.search(
             r"Video:[^\r\n]*?[, ](\d{2,5})x(\d{2,5})(?=[ ,\[])",
-            result.stderr.decode(errors="replace"),
+            streams,
         )
         if not match:
             raise ExtractorError(
@@ -185,7 +189,30 @@ class IdlixIE(DooplayIE):
         # Film sinema dapat terpotong vertikal; lebar tetap menentukan kelas akses.
         item["session_required_height"] = max(item["height"], (item["width"] * 9 + 15) // 16)
 
+    def series_catalog(self, url, slug, season=None):
+        endpoint = f"/api/series/{quote(slug, safe='')}"
+        if season is not None:
+            endpoint += f"/season/{season}"
+        return self._api(urljoin(url, endpoint), slug, url)
+
     def _real_extract(self, url):
+        episode = re.fullmatch(r"/series/([\w-]+)/season/(\d+)/episode/(\d+)/?", urlsplit(url).path)
+        if episode:
+            slug, season, number = episode.groups()
+            catalog = self.series_catalog(url, slug, season)
+            metadata = next(
+                (
+                    item
+                    for item in (catalog.get("season") or {}).get("episodes", [])
+                    if item.get("episodeNumber") == int(number) and item.get("hasVideo")
+                ),
+                None,
+            )
+            if not metadata or not metadata.get("id"):
+                raise ExtractorError("Episode belum tersedia untuk diputar.", expected=True)
+            series = (catalog.get("series") or {}).get("title") or slug
+            title = f"{series} S{season}E{number}"
+            return self._extract_next_video(url, title, str(metadata["id"]), "episode")
         video_id = self._match_id(url).strip("/").rsplit("/", 1)[-1]
         webpage = self._download_webpage(url, video_id)
         if "/_next/static/" in webpage and urlsplit(url).path.startswith("/movie/"):
@@ -221,8 +248,11 @@ class IdlixIE(DooplayIE):
             raise ExtractorError(
                 "Film ini tidak menyediakan video yang dapat diputar.", expected=True
             )
+        return self._extract_next_video(url, metadata.get("title") or slug, video_id, "movie")
+
+    def _extract_next_video(self, url, title, video_id, kind):
         session = self._api(
-            urljoin(url, f"/api/watch/play-info/movie/{quote(video_id)}"), video_id, url
+            urljoin(url, f"/api/watch/play-info/{kind}/{quote(video_id, safe='')}"), video_id, url
         )
         if session.get("verification"):
             raise ExtractorError(
@@ -324,7 +354,7 @@ class IdlixIE(DooplayIE):
             )
         return {
             "id": video_id,
-            "title": metadata.get("title") or slug,
+            "title": title,
             "formats": formats,
             "subtitles": subtitles,
             "duration": session.get("durationSec"),

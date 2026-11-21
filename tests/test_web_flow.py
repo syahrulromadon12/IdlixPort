@@ -7,6 +7,7 @@ import shutil
 import sys
 import tempfile
 import time
+from urllib.parse import unquote
 
 import pytest
 from test_integration import media_server as media_server
@@ -127,6 +128,8 @@ def test_real_api_worker_download_and_local_files(flow_client):
     assert "SOURCE_SECRET" not in json.dumps(client.get("/api/jobs").json())
     file = client.get(f"/api/artifacts/{artifact['id']}/file")
     assert file.status_code == 200
+    name = unquote(file.headers["content-disposition"].split("filename*=UTF-8''", 1)[1])
+    assert name == f"{result['title']} - 1080p{actual.suffix}"
     assert hashlib.sha256(file.content).digest() == hashlib.sha256(actual.read_bytes()).digest()
     partial = client.get(f"/api/artifacts/{artifact['id']}/file", headers={"Range": "bytes=1-9"})
     assert partial.status_code == 206 and partial.content == file.content[1:10]

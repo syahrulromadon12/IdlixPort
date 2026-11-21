@@ -26,7 +26,8 @@ def test_real_worker_blocks_private_network_and_preserves_safe_error(tmp_path):
     runner.start()
     try:
         result = wait_for(repo, job, {"failed"})
-        assert result["error"]["code"] == "NETWORK_BLOCKED"
+        assert result["error"]["code"] == "NETWORK_BLOCKED_ADDRESS"
+        assert result["error"]["exception_type"] in {"DownloadError", "RequestError", "OSError"}
         assert "SECRET" not in json.dumps(result["error"])
     finally:
         runner.stop()
@@ -89,7 +90,7 @@ def test_real_worker_rejects_private_source_without_exposing_query(tmp_path):
             time.sleep(0.05)
         record = repo.get(job)
         assert record["state"] == "failed"
-        assert record["error"]["code"] == "NETWORK_BLOCKED"
+        assert record["error"]["code"] == "NETWORK_BLOCKED_ADDRESS"
         assert "SECRET" not in json.dumps(record["error"])
     finally:
         runner.stop()

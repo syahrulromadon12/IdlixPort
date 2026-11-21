@@ -1,8 +1,24 @@
 """Bounded file streaming with a lease held through disconnect and Range requests."""
 
+import re
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi.responses import Response, StreamingResponse
+
+
+def download_filename(record, artifact_id):
+    path = Path(record["relative_path"])
+    title = re.sub(r'[\x00-\x1f\x7f<>:"/\\|?*]', "-", str(record.get("title") or ""))
+    title = title.strip(" .")[:100].encode("utf-8", "ignore")[:160].decode("utf-8", "ignore")
+    title = title.rstrip(" .") or f"IdlixPort-{artifact_id[:8]}"
+    quality = record.get("quality")
+    if type(quality) is int and quality > 0:
+        title += f" - {quality}p"
+    suffix = path.suffix
+    if suffix == ".srt" and re.fullmatch(r"\.[a-z0-9-]{2,16}", Path(path.stem).suffix):
+        suffix = Path(path.stem).suffix + suffix
+    return title + suffix
 
 
 def file_response(artifacts, artifact_id, range_header=None):
@@ -32,7 +48,7 @@ def file_response(artifacts, artifact_id, range_header=None):
         "Accept-Ranges": "bytes",
         "Content-Length": str(end - start + 1),
         "Content-Disposition": "attachment; filename*=UTF-8''"
-        + quote("IdlixPort-" + artifact_id[:8] + "." + record["relative_path"].rsplit(".", 1)[-1]),
+        + quote(download_filename(record, artifact_id), safe=""),
         "X-Content-Type-Options": "nosniff",
     }
     if status == 206:

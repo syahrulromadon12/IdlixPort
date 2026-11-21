@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 
 from yt_dlp.extractor.generic import GenericIE
 from yt_dlp.networking import Request
+from yt_dlp.networking.exceptions import RequestError
+from yt_dlp.utils import ExtractorError
 
 from ..downloader import ffmpeg_path
 from ..extractor import IdlixIE
@@ -87,7 +89,27 @@ def normalize_dimensions(info, downloader, referer):
     formats = info.get("formats") or ([info] if info.get("url") else [])
     if len(formats) > MAX_FORMATS:
         raise AppError("PROBE_LIMIT")
+    separate_audio = any(
+        item.get("vcodec") == "none" and item.get("acodec") != "none" for item in formats
+    )
     for item in formats:
+        if (
+            not separate_audio
+            and item.get("height")
+            and item.get("vcodec") != "none"
+            and item.get("acodec") in (None, "none")
+            and item.get("protocol") == "m3u8_native"
+        ):
+            try:
+                streams = IdlixIE(downloader)._probe_hls_streams(
+                    item, str(info.get("id", "probe")), referer
+                )
+            except (ExtractorError, RequestError):
+                pass
+            else:
+                audio = re.search(r"^\s*Stream #[^\r\n]*?: Audio: ([\w-]+)", streams, re.M)
+                if audio:
+                    item["acodec"] = audio[1]
         if item.get("height") or item.get("vcodec") == "none":
             continue
         if item.get("protocol") == "m3u8_native":

@@ -25,7 +25,7 @@ from .session_cookies import decode_cookies
 
 
 def reject_external(*_args, **_kwargs):
-    raise AppError("NETWORK_BLOCKED")
+    raise AppError("NETWORK_BLOCKED_EXTERNAL")
 
 
 class WebYoutubeDL(YoutubeDL):
@@ -100,6 +100,38 @@ def media_downloader(config, output, events):
         FFmpegPostProcessor._ffmpeg_location.reset(token)
 
 
+def series_slug(url):
+    match = re.fullmatch(r"/series/([\w-]{1,120})/?", urlsplit(url).path)
+    return match[1] if match and IdlixIE.suitable(url) else None
+
+
+def inspect_series(downloader, url, slug):
+    extractor = WebIdlixIE(downloader)
+    catalog = extractor.series_catalog(url, slug)
+    episodes = []
+    for season in (catalog.get("seasons") or [])[:12]:
+        number = season.get("seasonNumber")
+        if type(number) is not int or not 0 <= number <= 999:
+            continue
+        data = catalog.get("defaultSeason") or {}
+        if data.get("seasonNumber") != number:
+            data = extractor.series_catalog(url, slug, number).get("season") or {}
+        for episode in data.get("episodes") or []:
+            index = episode.get("episodeNumber")
+            if type(index) is int and 0 < index <= 9999 and episode.get("hasVideo"):
+                episodes.append({"season": number, "episode": index})
+                if len(episodes) == 200:
+                    break
+        if len(episodes) == 200:
+            break
+    return {
+        "title": re.sub(r"https?://\S+", "[URL]", str(catalog.get("title") or slug))[:200],
+        "choices": [],
+        "series_url": urlsplit(url)._replace(query="", fragment="").geturl().rstrip("/"),
+        "episodes": episodes,
+    }
+
+
 def entrypoint(url):
     if not IdlixIE.suitable(url) and not urlsplit(url).path.lower().endswith(
         (".mp4", ".m3u8", ".mpd", ".webm", ".mkv")
@@ -118,7 +150,12 @@ def _fresh_job(config, events):
         output.mkdir(mode=0o700, parents=True, exist_ok=True)
         ensure_space(output, payload.get("estimated_bytes"))
     events.phase("extracting")
+    slug = series_slug(url)
+    if slug and config["kind"] != "inspect":
+        raise AppError("INVALID_INPUT")
     with media_downloader(config, output, events) as downloader:
+        if slug:
+            return inspect_series(downloader, url, slug)
         if config.get("require_account"):
             downloader.web_session_evidence = {}
         info = single_video(downloader.extract_info(url, download=False))

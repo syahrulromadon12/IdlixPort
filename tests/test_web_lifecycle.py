@@ -155,6 +155,16 @@ def test_probe_format_and_response_byte_limits():
         bounded.read()
 
 
+def test_read_all_releases_network_slot():
+    response = Response(io.BytesIO(b"video"), "https://source.example", {}, 200)
+    lease = SimpleNamespace(release=Mock())
+    bounded = LeasedResponse(response, lease, ReadBudget())
+
+    assert bounded.read(-1) == b"video"
+    assert bounded.closed
+    lease.release.assert_called_once()
+
+
 def test_direct_probe_reads_only_bounded_sample(monkeypatch):
     response = Mock()
     response.__enter__ = Mock(return_value=response)
@@ -178,3 +188,28 @@ def test_direct_probe_reads_only_bounded_sample(monkeypatch):
     info = {"formats": [{"url": "https://source.example/video.mp4", "protocol": "https"}]}
     normalize_dimensions(info, downloader, "https://source.example")
     assert choices(info) == []
+
+
+@pytest.mark.parametrize("with_audio", [True, False])
+def test_hls_with_known_height_requires_audio_evidence(monkeypatch, with_audio):
+    from idlix_downloader.web.quality import select
+
+    item = {
+        "url": "https://source.example/video.m3u8",
+        "protocol": "m3u8_native",
+        "height": 720,
+        "format_id": "720p",
+    }
+    info = {"formats": [item]}
+    probe = Mock(return_value="  Stream #0:0: Video: h264")
+    if with_audio:
+        probe.return_value += "\n  Stream #0:1: Audio: aac (LC)"
+    monkeypatch.setattr("idlix_downloader.extractor.IdlixIE._probe_hls_streams", probe)
+    normalize_dimensions(info, Mock(), "https://source.example")
+    probe.assert_called_once()
+    assert item["height"] == 720
+    assert choices(info)[0]["audio_available"] is with_audio
+    if with_audio:
+        _, _, selected = select(info, "best")
+        assert selected == [item]
+        assert item["acodec"] == "aac"

@@ -248,3 +248,52 @@ def test_browser_verification_is_reported_without_claim_attempt(monkeypatch):
         adapter._extract_next_movie(PAGE, "fixture")
     assert not sleeps
     assert not any(endpoint.endswith("/api/watch/session/claim") for endpoint, _ in calls)
+
+
+def test_series_episode_uses_episode_id_and_playback_kind(monkeypatch):
+    adapter = IdlixIE(YoutubeDL({"quiet": True}))
+    url = "https://z3.idlixku.com/series/sample/season/2/episode/3"
+    monkeypatch.setattr(
+        adapter,
+        "_api",
+        lambda endpoint, *_: (
+            {
+                "season": {"episodes": [{"episodeNumber": 3, "hasVideo": True, "id": "ep-id"}]},
+                "series": {"title": "Sample"},
+            }
+            if endpoint.endswith("/api/series/sample/season/2")
+            else pytest.fail(endpoint)
+        ),
+    )
+    monkeypatch.setattr(adapter, "_extract_next_video", lambda *args: args)
+    assert adapter._real_extract(url) == (url, "Sample S2E3", "ep-id", "episode")
+
+
+def test_series_catalog_lists_only_playable_episodes(monkeypatch):
+    from idlix_downloader.web.engine import inspect_series, series_slug
+    from idlix_downloader.web.inspection import WebIdlixIE
+
+    url = "https://z3.idlixku.com/series/sample?play=1"
+    monkeypatch.setattr(
+        WebIdlixIE,
+        "series_catalog",
+        lambda self, url, slug, season=None: (
+            {"season": {"episodes": [{"episodeNumber": 1, "hasVideo": True}]}}
+            if season == 2
+            else {
+                "title": "Sample",
+                "seasons": [{"seasonNumber": 1}, {"seasonNumber": 2}],
+                "defaultSeason": {
+                    "seasonNumber": 1,
+                    "episodes": [
+                        {"episodeNumber": 1, "hasVideo": True},
+                        {"episodeNumber": 2, "hasVideo": False},
+                    ],
+                },
+            }
+        ),
+    )
+    result = inspect_series(YoutubeDL({"quiet": True}), url, series_slug(url))
+    assert result["episodes"] == [{"season": 1, "episode": 1}, {"season": 2, "episode": 1}]
+    assert result["series_url"] == url.split("?")[0]
+    assert result["choices"] == []

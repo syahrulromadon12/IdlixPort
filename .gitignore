@@ -100,3 +100,5 @@ Desktop.ini
 .idea/workspace.xml
 .idea/shelf/
 .vscode/*.local.json
+
+.codex/*

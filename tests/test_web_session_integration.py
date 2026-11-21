@@ -95,6 +95,18 @@ def connect(client, app, profile):
     return wait_state(app.state.sessions, {"connected"})
 
 
+def test_guest_download_completes_at_720_without_browser_session(authenticated_client):
+    client, app, _, _ = authenticated_client
+    guest = inspect_source(client)
+    response = client.post("/api/jobs", json={"inspection_id": guest["id"], "policy": "best"})
+    assert response.status_code == 202
+    result = wait_job(client, response.json()["id"])
+    assert result["state"] == "completed", result
+    assert result["effective_quality"]["quality_class"] == 720
+    assert any(file["available"] for file in result["files"])
+    assert app.state.sessions.status()["state"] == "disconnected"
+
+
 def test_guest_account_reinspection_entitlement_and_private_cookie_ipc(authenticated_client):
     client, app, profile, account = authenticated_client
     guest = inspect_source(client)

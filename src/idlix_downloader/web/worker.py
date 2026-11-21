@@ -14,6 +14,11 @@ from .files import ensure_space
 from .locking import FileLock
 
 MAX_MESSAGE = 65536
+ERROR_TYPES = frozenset({
+    "AssertionError", "DownloadError", "FileNotFoundError", "HTTPError",
+    "IncompleteRead", "IndexError", "KeyError", "OSError", "RequestError",
+    "RuntimeError", "TimeoutError", "TypeError", "ValueError",
+})
 
 
 def emit(data):
@@ -60,7 +65,14 @@ def main():
         emit({"type": "result", "result": result})
         return 0
     except Exception as error:
-        emit({"type": "error", "code": public_error(error)["code"]})
+        failure = public_error(error)
+        error_type = type(error).__name__
+        emit({
+            "type": "error",
+            "code": failure["code"],
+            "blocked_host": failure.get("blocked_host"),
+            "exception_type": error_type if error_type in ERROR_TYPES else "UnknownError",
+        })
         return 1
     finally:
         if lock:

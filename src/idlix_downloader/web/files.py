@@ -131,7 +131,7 @@ class Artifacts:
 
     def acquire(self, artifact_id):
         with self.lock:
-            path, record, _ = self.locate(artifact_id)
+            path, record, job = self.locate(artifact_id)
             handle = None
             try:
                 descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
@@ -157,7 +157,12 @@ class Artifacts:
                     if not self.readers[artifact_id]:
                         del self.readers[artifact_id]
 
-            return ArtifactLease(handle, release), record
+            result = job.get("result") or {}
+            return ArtifactLease(handle, release), {
+                **record,
+                "title": result.get("title") or job["payload"].get("title"),
+                "quality": (result.get("effective_quality") or {}).get("quality_class"),
+            }
 
     def delete(self, artifact_id):
         with self.lock:

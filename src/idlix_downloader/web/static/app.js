@@ -27,11 +27,12 @@ function duration(number) {
   const minutes = Math.ceil(number / 60);
   return minutes >= 60 ? `${Math.floor(minutes / 60)} jam ${minutes % 60} menit` : `${minutes} menit`;
 }
-function notice(message = "", owner = "") {
+function notice(message = "", owner = "", showSession = false) {
   const box = $("notice");
   box.dataset.owner = owner;
   if (box.textContent !== message) box.textContent = message;
   box.hidden = !message;
+  $("show-session").hidden = !showSession;
 }
 function connection(online) {
   $("connection").textContent = online ? "Lokal siap" : "Terputus · mencoba lagi";
@@ -86,7 +87,52 @@ function updateSelection() {
   $("estimated-size").textContent = estimate ? `≈ ${bytes(estimate)} · perkiraan sumber` : "Ukuran belum diketahui";
   $("evidence").textContent = choice ? `Dimensi: ${choice.width || "?"} × ${choice.height}. Informasi: ${{label: "label sumber", probe: "sampel video", dimensions: "metadata sumber"}[choice.evidence] || "sumber"}.` : "";
 }
+let renderedSeries = null;
+function renderSeries(job) {
+  const metadata = job.metadata;
+  $("series-selection").hidden = false;
+  $("selection").hidden = true;
+  if (renderedSeries === job.id) return;
+  renderedSeries = job.id;
+  $("series-title").textContent = metadata.title;
+  const field = $("series-episodes");
+  field.querySelectorAll("label").forEach((label) => label.remove());
+  for (const {season, episode} of metadata.episodes) {
+    const label = element("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = `${metadata.series_url}/season/${season}/episode/${episode}`;
+    label.append(input, document.createTextNode(` Season ${season}, episode ${episode}`));
+    field.append(label);
+  }
+  updateEpisodeActions();
+}
+
+function selectedEpisodes() {
+  return [...$("series-episodes").querySelectorAll("input:checked")].map((input) => input.value);
+}
+
+function updateEpisodeActions() {
+  const count = selectedEpisodes().length;
+  const available = $("series-episodes").querySelectorAll("input").length;
+  $("inspect-episode").disabled = count !== 1;
+  $("batch-episodes").disabled = count < 2 || count > 20;
+  $("series-status").textContent = available ? `${count} dipilih · maksimal 20 untuk batch` : "Belum ada episode yang tersedia.";
+}
+
+$("series-episodes").addEventListener("change", updateEpisodeActions);
+$("inspect-episode").addEventListener("click", () => {
+  $("source-url").value = selectedEpisodes()[0];
+  $("inspect-form").requestSubmit();
+});
+$("batch-episodes").addEventListener("click", () => {
+  $("batch-urls").value = selectedEpisodes().join("\n");
+  $("batch-panel").open = true;
+  $("batch-urls").focus();
+});
+
 function renderInspection(job) {
+  $("series-selection").hidden = true;
   state.inspection = job;
   state.inspecting = active(job);
   $("cancel-inspection").hidden = !active(job);
@@ -102,10 +148,19 @@ function renderInspection(job) {
   if (job.state !== "completed") {
     $("inspection-status").textContent = "Pemeriksaan belum berhasil.";
     $("selection").hidden = true;
-    if (job.error) notice([job.error.message, job.error.action].filter(Boolean).join(" "), "inspection");
+    if (job.error) {
+      const showSession = job.error.code === "VERIFICATION_REQUIRED" &&
+        sessionState?.state === "disconnected" && sessionState.profiles.length > 0;
+      notice([job.error.message, job.error.action].filter(Boolean).join(" "), "inspection", showSession);
+    }
     return;
   }
   if ($("notice").dataset.owner === "inspection") notice();
+  if (job.metadata.episodes) {
+    $("inspection-status").textContent = "";
+    renderSeries(job);
+    return;
+  }
   const signature = `${job.id}:${JSON.stringify(job.metadata)}`;
   $("inspection-status").textContent = "Pemeriksaan selesai.";
   if (state.signature !== signature) {
@@ -164,8 +219,26 @@ function jobCard(job) {
   if (active(job)) {
     const progress = document.createElement("progress"); progress.max = 100;
     progress.setAttribute("aria-label", `Progres ${job.title || "film"}`);
-    if (job.progress?.total_bytes > 0) progress.value = Math.min(99, Math.max(0, 100 * (job.progress.downloaded_bytes || 0) / job.progress.total_bytes));
     const metrics = [phases[job.phase] || "Menunggu giliran"];
+    if (job.phase === "downloading") {
+      const {total_bytes: total, total_bytes_estimate: estimate, downloaded_bytes: downloaded,
+        fragment_index: fragment, fragment_count: fragments} = job.progress || {};
+      const hasTotal = Number.isFinite(total) && total > 0;
+      const hasEstimate = Number.isFinite(estimate) && estimate > 0;
+      let percent;
+      if (Number.isFinite(downloaded) && downloaded >= 0 && (hasTotal || hasEstimate)) {
+        percent = 100 * downloaded / (hasTotal ? total : estimate);
+      } else if (Number.isFinite(fragment) && fragment >= 0 && Number.isFinite(fragments) && fragments > 0) {
+        percent = 100 * fragment / fragments;
+      }
+      if (percent !== undefined) {
+        progress.value = Math.min(99, percent);
+        metrics.push(`${hasTotal ? "" : "≈ "}${Math.floor(progress.value)}%`);
+      } else {
+        progress.hidden = true;
+        metrics.push("Persentase belum tersedia");
+      }
+    }
     if (Number.isFinite(job.progress?.downloaded_bytes)) metrics.push(bytes(job.progress.downloaded_bytes));
     if (job.progress?.speed > 0) metrics.push(`${bytes(job.progress.speed)}/s`);
     if (Number.isFinite(job.progress?.eta)) metrics.push(`sisa ≈ ${Math.ceil(job.progress.eta / 60)} menit`);
@@ -232,11 +305,23 @@ function jobCard(job) {
       }
       const sub=job.subtitle_status;
       if (sub) card.append(element("p","field-hint",sub.failed ? "Video tersedia; subtitle belum selesai." : sub.mode==="embed" ? `Subtitle ${sub.language} tergabung sebagai track MKV.` : sub.mode==="separate" ? `Subtitle ${sub.language} disimpan terpisah.` : "Tanpa subtitle."));
-      const copy = element("a", "copy-link", "Simpan salinan lewat browser"); copy.href = `/api/artifacts/${file.id}/file`; copy.download = ""; card.append(copy);
+      const copy = element("a", "copy-link client-download", "Simpan ke Downloads"); copy.href = `/api/artifacts/${file.id}/file`; copy.download = ""; card.append(copy);
     } else { card.append(element("p", "field-hint", "File sudah dipindahkan atau tidak tersedia.")); }
   }
   return card;
 }
+const clientDownloads = new Set();
+
+function sendCompletedDownloads(jobs) {
+  for (const job of jobs) {
+    if (!clientDownloads.has(job.id) || active(job)) continue;
+    clientDownloads.delete(job.id);
+    if (job.state !== "completed") continue;
+    const link = state.cards.get(job.id)?.node.querySelector(".client-download");
+    link?.click();
+  }
+}
+
 function renderJobs(jobs) {
   const downloads = jobs.filter((job) => job.kind === "download");
   state.downloadActive = downloads.some(active);
@@ -265,23 +350,35 @@ async function refresh() {
   if (state.polling) return;
   if (!state.ready) return bootstrap();
   state.polling = true;
+  const current = state.current;
   let busy = false;
   try {
     const data = await api("/api/jobs");
     connection(true); state.failures = 0;
     renderJobs(data.jobs);
+    sendCompletedDownloads(data.jobs);
     renderBatches(data.batches || []);
-    let inspection = data.jobs.find((job) => job.id === state.current && job.kind === "inspect");
-    if (!state.current) inspection = data.jobs.find((job) => job.kind === "inspect");
-    if (!inspection && state.current) {
-      try { inspection = await api(`/api/inspections/${state.current}`); }
-      catch (error) { if (error.code === "NOT_FOUND") { state.current = null; safeStore.set("idlixport.inspection", ""); } else throw error; }
-    }
-    if (inspection) {
-      state.current = inspection.id; safeStore.set("idlixport.inspection", inspection.id);
-      renderInspection(inspection);
-    }
     busy = data.jobs.some(active);
+    if (state.current !== current) { busy = true; return; }
+    let inspection = data.jobs.find((job) =>
+      job.kind === "inspect" && (!current || job.id === current));
+    if (!inspection && current) {
+      try {
+        inspection = await api(`/api/inspections/${current}`);
+      } catch (error) {
+        if (state.current !== current) { busy = true; return; }
+        if (error.code !== "NOT_FOUND") throw error;
+        state.current = null;
+        safeStore.set("idlixport.inspection", "");
+      }
+    }
+    if (inspection && state.current === current) {
+      state.current = inspection.id;
+      safeStore.set("idlixport.inspection", inspection.id);
+      renderInspection(inspection);
+    } else if (state.current !== current) {
+      busy = true;
+    }
   } catch (error) { state.failures++; connection(false); }
   finally { state.polling = false; schedule(busy); }
 }
@@ -333,7 +430,8 @@ $("download-button").addEventListener("click", async () => {
   const serialized = JSON.stringify(payload);
   if (state.lastRequest !== serialized) { state.lastRequest = serialized; state.requestKey = crypto.randomUUID(); }
   try {
-    await api("/api/jobs", { method: "POST", body: payload, key: state.requestKey });
+    const result = await api("/api/jobs", { method: "POST", body: payload, key: state.requestKey });
+    clientDownloads.add(result.id);
     step(3); await refresh();
   } catch (error) { notice(errorMessage(error)); }
   finally { state.submitting = false; updateSelection(); }
@@ -418,8 +516,15 @@ function renderSession(data) {
   if (changed && state.current) {
     state.signature = ""; $("selection").hidden = true;
     if (data.state === "connected") {
-      api(`/api/inspections/${state.current}/refresh`, {method:"POST",key:crypto.randomUUID()})
-        .then((result) => {state.current=result.id; safeStore.set("idlixport.inspection",result.id); refresh();})
+      const previous = state.current;
+      const revision = data.revision;
+      api(`/api/inspections/${previous}/refresh`, {method:"POST",key:crypto.randomUUID()})
+        .then((result) => {
+          if (state.current !== previous || sessionRevision !== revision) return;
+          state.current = result.id;
+          safeStore.set("idlixport.inspection", result.id);
+          refresh();
+        })
         .catch((error) => notice(errorMessage(error)));
     } else { refresh(); }
   }
@@ -447,7 +552,8 @@ async function sessionAction(operation) {
   try {
     const options = {method:operation === "disconnect" ? "DELETE" : "POST"};
     if (operation === "connect") {
-      const url = $("source-url").value.trim() || $("batch-urls").value.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
+      const seriesEpisode = !$("series-selection").hidden && $("series-episodes").querySelector("input");
+      const url = (seriesEpisode && (selectedEpisodes()[0] || seriesEpisode.value)) || $("source-url").value.trim() || $("batch-urls").value.split(/\r?\n/).map((line) => line.trim()).find(Boolean);
       if (!url) throw new Error("Tempel tautan film IDLIX terlebih dahulu.");
       options.body = {profile_id:$("session-profile").value,url,consent:$("session-consent").checked};
     }
@@ -462,6 +568,10 @@ async function sessionAction(operation) {
     sessionTimer=setTimeout(sessionRefresh,5000);
   }
 }
+$("show-session").addEventListener("click", () => {
+  $("browser-session-panel").open = true;
+  $("session-profile").focus();
+});
 $("session-consent").addEventListener("change", () => {$("session-connect").disabled=!$("session-consent").checked || !sessionState?.profiles.length;});
 $("session-connect").addEventListener("click", () => sessionAction("connect"));
 $("session-retry").addEventListener("click", () => sessionAction("retry"));

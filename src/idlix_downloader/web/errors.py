@@ -1,5 +1,7 @@
 """Public errors never contain raw provider messages or credentials."""
 
+import re
+
 ERRORS = {
     "SUBTITLE_FAILED": (
         "Subtitle atau penggabungannya gagal; video tetap tersedia.",
@@ -79,14 +81,36 @@ ERRORS = {
     "UNKNOWN_RESOLUTION": ("Resolusi sumber belum dapat dibuktikan.", False, "Pilih sumber lain."),
     "SOURCE_UNAVAILABLE": ("Sumber tidak dapat diproses.", True, "Periksa URL dan coba lagi."),
     "VERIFICATION_REQUIRED": (
-        "Sumber meminta verifikasi pemutaran browser.",
+        "IDLIX meminta pemeriksaan tambahan untuk video ini. "
+        "IdlixPort belum mendukung pemeriksaan itu, sehingga unduhan tidak bisa dimulai.",
         False,
-        "Buka situs sumber.",
+        "",
     ),
     "NETWORK_BLOCKED": (
-        "Permintaan jaringan tidak diizinkan.",
+        "Aturan jaringan IdlixPort menolak koneksi yang diperlukan untuk unduhan ini.",
         False,
-        "Periksa konfigurasi host operator.",
+        "",
+    ),
+    "NETWORK_BLOCKED_DESTINATION": (
+        "Server tujuan berada di luar daftar izin IdlixPort.",
+        False,
+        "",
+    ),
+    "NETWORK_BLOCKED_PORT": ("IdlixPort hanya mengizinkan koneksi ke port 80 dan 443.", False, ""),
+    "NETWORK_BLOCKED_ADDRESS": (
+        "Server unduhan mengarah ke alamat IP yang tidak diizinkan.",
+        False,
+        "",
+    ),
+    "NETWORK_BLOCKED_EXTERNAL": (
+        "Format stream ini memerlukan pengunduh eksternal. IdlixPort hanya mengizinkan pengunduh internal.",
+        False,
+        "",
+    ),
+    "NETWORK_CAPACITY_TIMEOUT": (
+        "Semua slot koneksi IdlixPort sedang terpakai.",
+        True,
+        "Tunggu sebentar, lalu coba unduh lagi.",
     ),
     "DISK_FULL": ("Ruang penyimpanan tidak cukup.", False, "Kosongkan ruang disk."),
     "FFMPEG_MISSING": ("FFmpeg belum tersedia.", False, "Periksa instalasi aplikasi."),
@@ -116,6 +140,12 @@ class AppError(Exception):
         return dict(code=self.code, message=message, retryable=retryable, action=action)
 
 
+def safe_blocked_host(value):
+    if isinstance(value, str) and re.fullmatch(r"[a-zA-Z0-9.-]{1,253}", value):
+        return value.lower()
+    return None
+
+
 def public_error(error):
     if isinstance(error, AppError):
         return error.public()
@@ -127,6 +157,14 @@ def public_error(error):
         code = "DISK_FULL"
     elif isinstance(error, PermissionError):
         code = "OUTPUT_UNWRITABLE"
+    elif "network_capacity_timeout" in text:
+        code = "NETWORK_CAPACITY_TIMEOUT"
+    elif "network_blocked_destination" in text:
+        code = "NETWORK_BLOCKED_DESTINATION"
+    elif "network_blocked_port" in text:
+        code = "NETWORK_BLOCKED_PORT"
+    elif "network_blocked_address" in text:
+        code = "NETWORK_BLOCKED_ADDRESS"
     elif "network_blocked" in text or "proxy_blocked" in text:
         code = "NETWORK_BLOCKED"
     elif "http error 401" in text or "http error 403" in text or "api idlix menolak sesi" in text:
@@ -135,4 +173,9 @@ def public_error(error):
         code = "VERIFICATION_REQUIRED"
     elif isinstance(error, OSError) and error.errno == 28:
         code = "DISK_FULL"
-    return AppError(code).public()
+    result = AppError(code).public()
+    if code == "NETWORK_BLOCKED_DESTINATION":
+        match = re.search(r"network_blocked_destination \[([a-z0-9.-]{1,253})\]", text)
+        if match:
+            result["blocked_host"] = match[1]
+    return result

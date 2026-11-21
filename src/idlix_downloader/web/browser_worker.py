@@ -14,7 +14,7 @@ from .errors import AppError, public_error
 from .events import Events
 from .inspection import normalize_dimensions
 from .quality import choices
-from .session_cookies import encode_cookies
+from .session_cookies import encode_cookies, usable
 from .worker import MAX_MESSAGE, monitor_parent
 
 
@@ -55,6 +55,15 @@ def probe(config):
             result["max_height"] = info.get("session_max_height")
     except Exception as error:
         result["code"] = public_error(error)["code"]
+    names = {cookie["name"] for cookie in usable(cookies)}
+    if (
+        result["code"] == "VERIFICATION_REQUIRED"
+        and evidence.get("stage") == "play_info"
+        and not evidence.get("account_verified")
+        and "refresh_token" in names
+        and "access_token" not in names
+    ):
+        result["code"] = "SESSION_EXPIRED"
     result["stage"] = evidence.get("stage", "page")
     result["account_verified"] = evidence.get("account_verified", False)
     if not result["account_verified"] and result["code"] is None:

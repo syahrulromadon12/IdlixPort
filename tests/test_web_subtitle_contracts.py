@@ -47,10 +47,10 @@ def test_subtitle_failure_keeps_valid_video(public_route, tmp_path, monkeypatch,
     if failure == "mux":
         original = subtitles.local_ffmpeg
 
-        def fail_merge(args):
+        def fail_merge(args, **kwargs):
             if Path(args[-1]).name == "film.mkv":
                 raise AppError("SUBTITLE_FAILED")
-            return original(args)
+            return original(args, **kwargs)
 
         monkeypatch.setattr(subtitles, "local_ffmpeg", fail_merge)
     cfg = config(tmp_path, "http://source.example/master.m3u8")

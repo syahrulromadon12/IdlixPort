@@ -64,12 +64,12 @@ def selection(mode, language, available):
     return mode, language
 
 
-def local_ffmpeg(arguments):
+def local_ffmpeg(arguments, *, timeout=60):
     try:
         result = subprocess.run(
             [ffmpeg_path(), "-hide_banner", "-loglevel", "error", "-nostdin", "-y", *arguments],
             capture_output=True,
-            timeout=60,
+            timeout=timeout,
         )
         if result.returncode:
             raise AppError("SUBTITLE_FAILED")
@@ -129,7 +129,8 @@ def complete(info, downloader, video, output, mode, language, events):
     label, iso = LANGUAGES.get(
         language.split("-")[0], (language, language if len(language) == 3 else "und")
     )
-    try:
+
+    def mux(source):
         local_ffmpeg(
             [
                 "-protocol_whitelist",
@@ -137,7 +138,7 @@ def complete(info, downloader, video, output, mode, language, events):
                 "-format_whitelist",
                 "mov,matroska,webm",
                 "-i",
-                str(video),
+                str(source),
                 "-protocol_whitelist",
                 "file,pipe",
                 "-format_whitelist",
@@ -159,11 +160,43 @@ def complete(info, downloader, video, output, mode, language, events):
                 "-disposition:s:0",
                 "default",
                 str(merged),
-            ]
+            ],
+            timeout=300,
         )
+
+    intermediate = output / "subtitle-remux.mp4"
+    try:
+        try:
+            mux(video)
+        except AppError:
+            with video.open("rb") as handle:
+                prefix = handle.read(377)
+            if prefix[::188] != b"GGG":
+                raise
+            local_ffmpeg(
+                [
+                    "-protocol_whitelist",
+                    "file,pipe",
+                    "-f",
+                    "mpegts",
+                    "-i",
+                    str(video),
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a",
+                    "-c",
+                    "copy",
+                    str(intermediate),
+                ],
+                timeout=300,
+            )
+            mux(intermediate)
         if not merged.is_file() or not merged.stat().st_size:
             raise AppError("SUBTITLE_FAILED")
     except BaseException:
         merged.unlink(missing_ok=True)
         raise
+    finally:
+        intermediate.unlink(missing_ok=True)
     return [merged], {"mode": mode, "language": language}

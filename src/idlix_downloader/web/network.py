@@ -43,21 +43,25 @@ class NetworkPolicy:
     def validate(self, url):
         validate_url(url)
         parts = urlsplit(url)
-        if not self.host_allowed(parts.hostname) or parts.port not in (None, 80, 443):
-            raise OSError("NETWORK_BLOCKED")
+        if parts.port not in (None, 80, 443):
+            raise OSError("NETWORK_BLOCKED_PORT")
+        if not self.host_allowed(parts.hostname):
+            raise OSError(f"NETWORK_BLOCKED_DESTINATION [{parts.hostname.encode('idna').decode()}]")
         return parts
 
     def connect(self, address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None):
         host, port = address
-        if not self.host_allowed(host) or port not in (80, 443):
-            raise OSError("NETWORK_BLOCKED")
+        if port not in (80, 443):
+            raise OSError("NETWORK_BLOCKED_PORT")
+        if not self.host_allowed(host):
+            raise OSError(f"NETWORK_BLOCKED_DESTINATION [{host.encode('idna').decode()}]")
         answers = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
         if not answers:
             raise OSError("NETWORK_BLOCKED")
         for answer in answers:
             ip = ipaddress.ip_address(answer[4][0])
             if not ip.is_global or ip.is_multicast or getattr(ip, "ipv4_mapped", None):
-                raise OSError("NETWORK_BLOCKED")
+                raise OSError("NETWORK_BLOCKED_ADDRESS")
         last = None
         for family, kind, protocol, _, target in answers:
             sock = socket.socket(family, kind, protocol)
@@ -119,12 +123,13 @@ class LeasedResponse(Response):
         )
 
     def read(self, amt=None):
+        read_all = amt is None or amt < 0
         try:
             if self.budget is not None:
                 with self.budget.lock:
                     if self.budget.enabled:
                         available = min(self.budget.remaining, 2 * 1024 * 1024 - self.consumed)
-                        limit = min(amt, available + 1) if amt is not None else available + 1
+                        limit = available + 1 if read_all else min(amt, available + 1)
                         data = super().read(limit)
                         if len(data) > available:
                             raise RequestError("PROBE_LIMIT")
@@ -134,7 +139,7 @@ class LeasedResponse(Response):
                         data = super().read(amt)
             else:
                 data = super().read(amt)
-            if not data and amt != 0:
+            if read_all or (not data and amt != 0):
                 self.close()
             return data
         except BaseException:
@@ -175,9 +180,15 @@ def restricted_handler(policy, pool, budget=None):
         def _send(self, request):
             try:
                 policy.validate(request.url)
-                lease = pool.acquire()
             except (OSError, ValueError) as error:
-                raise RequestError("NETWORK_BLOCKED") from error
+                code = str(error)
+                if not code.startswith("NETWORK_BLOCKED_DESTINATION [") and code != "NETWORK_BLOCKED_PORT":
+                    code = "NETWORK_BLOCKED"
+                raise RequestError(code) from error
+            try:
+                lease = pool.acquire()
+            except TimeoutError as error:
+                raise RequestError("NETWORK_CAPACITY_TIMEOUT") from error
             try:
                 return LeasedResponse(super()._send(request), lease, budget)
             except HTTPError as error:

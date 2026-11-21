@@ -28,6 +28,9 @@ class Events:
         for source, target in (
             ("downloaded_bytes", "downloaded_bytes"),
             ("total_bytes", "total_bytes"),
+            ("total_bytes_estimate", "total_bytes_estimate"),
+            ("fragment_index", "fragment_index"),
+            ("fragment_count", "fragment_count"),
             ("speed", "speed"),
             ("eta", "eta"),
         ):

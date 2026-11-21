@@ -8,12 +8,12 @@ import threading
 import time
 from pathlib import Path
 
-from .errors import AppError
+from .errors import AppError, safe_blocked_host
 from .events import PHASES
 from .files import Artifacts, Destinations, ensure_space
 from .locking import FileLock
 from .processes import ProcessTree
-from .worker import MAX_MESSAGE
+from .worker import ERROR_TYPES, MAX_MESSAGE
 
 INSPECTION_TIMEOUT = 120
 
@@ -84,6 +84,8 @@ class Runner:
         messages = queue.Queue(maxsize=64)
         overflow = threading.Event()
         failed = False
+        worker_failure = None
+        blocked_host = None
         config, encoded = {}, b""
         try:
             if job["kind"] == "download":
@@ -220,6 +222,8 @@ class Runner:
                     if set(result) - {
                         "title",
                         "choices",
+                        "series_url",
+                        "episodes",
                         "session_max_height",
                         "effective_quality",
                         "artifacts",
@@ -235,6 +239,11 @@ class Runner:
                         raise AppError("WORKER_FAILED")
                 elif event.get("type") == "error":
                     error = AppError(event.get("code")).public()
+                    if error["code"] == "NETWORK_BLOCKED_DESTINATION":
+                        blocked_host = safe_blocked_host(event.get("blocked_host"))
+                    exception_type = event.get("exception_type")
+                    if isinstance(exception_type, str) and exception_type in ERROR_TYPES:
+                        worker_failure = exception_type
                 else:
                     raise AppError("WORKER_FAILED")
             exit_code = tree.process.wait(timeout=5)
@@ -259,6 +268,13 @@ class Runner:
             error = AppError(
                 failure.code if isinstance(failure, AppError) else "WORKER_FAILED"
             ).public()
+            if blocked_host and error["code"] == "NETWORK_BLOCKED_DESTINATION":
+                error["blocked_host"] = blocked_host
+                error["message"] = f"Server {blocked_host} berada di luar daftar izin IdlixPort."
+            if worker_failure is not None:
+                error["exception_type"] = worker_failure
+            elif error["code"] == "WORKER_FAILED":
+                error["exception_type"] = "RunnerError"
         finally:
             config.pop("cookies", None)
             encoded = b""

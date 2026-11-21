@@ -101,7 +101,7 @@ try {
   await until(() => evaluate(`!document.querySelector('#session-retry').hidden`),'Permission recovery missing');
   await writeFile(cookieControl,'verification');
   await click('#session-retry');
-  await until(() => evaluate(`document.querySelector('#session-status').textContent.includes('verifikasi pemutaran')`),'Verification state missing');
+  await until(() => evaluate(`document.querySelector('#session-status').textContent.includes('IDLIX meminta verifikasi browser')`),'Verification state missing');
   assert.equal(await evaluate(`document.querySelector('#session-badge').textContent`),'Akun dikenali');
   await writeFile(cookieControl,'member'); await click('#session-retry');
   await until(() => evaluate(`document.querySelector('#session-badge').textContent==='Terhubung'`),'Retry did not reconnect');

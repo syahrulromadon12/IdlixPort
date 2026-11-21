@@ -78,7 +78,7 @@ def test_nested_manifest_cannot_escape_guard(public_route, tmp_path):
     )
     with pytest.raises(Exception) as failure:
         run_job(config(tmp_path, "http://source.example/evil.m3u8"), Events(lambda event: None))
-    assert public_error(failure.value)["code"] == "NETWORK_BLOCKED"
+    assert public_error(failure.value)["code"] == "NETWORK_BLOCKED_DESTINATION"
 
 
 def test_error_responses_release_capacity_and_external_downloader_blocked(public_route, tmp_path):
@@ -239,7 +239,7 @@ def test_real_tls_validates_hostname_and_redirect_is_guarded(tmp_path, monkeypat
                 d.urlopen(Request("https://wrong.example/"))
             with pytest.raises(Exception) as failure:
                 d.urlopen(Request("https://source.example/redirect"))
-            assert public_error(failure.value)["code"] == "NETWORK_BLOCKED"
+            assert public_error(failure.value)["code"] == "NETWORK_BLOCKED_ADDRESS"
     finally:
         server.shutdown()
         server.server_close()
@@ -357,3 +357,12 @@ def test_hls_rotation_across_every_verified_g7_host(public_route, tmp_path, monk
     assert visited == set(hosts)
     assert result["effective_quality"]["quality_class"] == 1080
     assert result["artifacts"] and not result.get("partial")
+
+
+def test_disallowed_port_has_distinct_error():
+    policy = NetworkPolicy(("source.example",))
+    with pytest.raises(OSError) as failure:
+        policy.validate("https://source.example:8443/video.mp4?token=SECRET")
+    error = public_error(failure.value)
+    assert error["code"] == "NETWORK_BLOCKED_PORT"
+    assert "SECRET" not in str(error)

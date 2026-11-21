@@ -55,5 +55,5 @@ class SlotPool:
                 if lock.acquire():
                     return lock
             if time.monotonic() >= end:
-                raise OSError("NETWORK_BLOCKED: capacity timeout")
+                raise TimeoutError("network_capacity_timeout")
             time.sleep(0.05)
