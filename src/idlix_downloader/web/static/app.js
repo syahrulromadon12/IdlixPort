@@ -12,9 +12,9 @@ const state = {
   historyOffset: 0, historyLoading: false, historyNext: null,
   folder: safeStore.get("idlixport.folder") || "default", cards: new Map(),
 };
-const active = (job) => ["queued", "running", "cancelling"].includes(job.state);
+const active = (job) => ["queued", "running", "cancelling", "pausing"].includes(job.state);
 const phases = { extracting: "Memeriksa sumber", waiting_source: "Menunggu sumber", downloading: "Mengunduh", merging: "Menggabungkan video dan audio", validating: "Memeriksa hasil", subtitles: "Menyiapkan subtitle" };
-const statuses = { partial: "Hasil parsial", queued: "Antre", completed: "Selesai", failed: "Gagal", cancelled: "Dibatalkan", interrupted: "Terhenti", cancelling: "Menghentikan" };
+const statuses = { paused: "Dijeda", pausing: "Menjeda…", partial: "Hasil parsial", queued: "Antre", completed: "Selesai", failed: "Gagal", cancelled: "Dibatalkan", interrupted: "Terhenti", cancelling: "Menghentikan" };
 function bytes(number) {
   if (!Number.isFinite(number)) return "Ukuran belum diketahui";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -148,10 +148,21 @@ function renderInspection(job) {
   if (job.state !== "completed") {
     $("inspection-status").textContent = "Pemeriksaan belum berhasil.";
     $("selection").hidden = true;
+    if (job.error?.code === "VERIFICATION_REQUIRED" &&
+        ["connecting", "error", "expired"].includes(sessionState?.state)) {
+      $("inspection-status").textContent = sessionState.state === "connecting"
+        ? "Menunggu pemeriksaan sesi browser…"
+        : "Sambungkan kembali sesi lewat panel Sesi IDLIX.";
+      if ($("notice").dataset.owner === "inspection") notice();
+      return;
+    }
     if (job.error) {
       const showSession = job.error.code === "VERIFICATION_REQUIRED" &&
         sessionState?.state === "disconnected" && sessionState.profiles.length > 0;
-      notice([job.error.message, job.error.action].filter(Boolean).join(" "), "inspection", showSession);
+      const message = showSession
+        ? "Pemeriksaan tanpa akun gagal. Jika sudah login di IDLIX, sambungkan sesi browser untuk memeriksa ulang tautan."
+        : [job.error.message, job.error.action].filter(Boolean).join(" ");
+      notice(message, "inspection", showSession);
     }
     return;
   }
@@ -245,7 +256,14 @@ function jobCard(job) {
     card.append(progress, element("p", "job-progress", metrics.join(" · ")));
   }
   const controls = element("div", "job-actions");
-  if (active(job)) {
+  if (job.can_pause || job.can_resume) {
+    const operation = job.can_pause ? "pause" : "resume";
+    const button = element("button", "button secondary", job.can_pause ? "Jeda" : "Lanjutkan");
+    button.type = "button";
+    button.addEventListener("click", () => jobAction(button, job, operation));
+    controls.append(button);
+  }
+  if ((active(job) || job.can_resume) && job.state !== "pausing") {
     const cancel = element("button", "button secondary cancel-job", job.state === "cancelling" ? "Menghentikan…" : "Batalkan");
     cancel.type = "button"; cancel.disabled = job.state === "cancelling";
     cancel.addEventListener("click", () => jobAction(cancel, job, "cancel")); controls.append(cancel);
@@ -276,6 +294,9 @@ function jobCard(job) {
     }); controls.append(remove);
   }
   if (controls.childElementCount) card.append(controls);
+  if (job.state === "running" && job.phase === "downloading" && job.can_pause === false) {
+    card.append(element("p", "field-hint", "Jeda hanya tersedia untuk unduhan MP4 langsung yang bisa dilanjutkan."));
+  }
   const details = element("details", "job-details"); details.append(element("summary", "", "Detail unduhan"));
   const requested = job.requested_quality?.choice;
   const policy = job.requested_quality?.policy;
@@ -533,8 +554,10 @@ async function sessionRefresh(focused = false) {
   if (sessionBusy || sessionActionBusy) return;
   sessionBusy = true; clearTimeout(sessionTimer);
   try {
-    const data = await api(focused && sessionState?.state === "connecting" ? "/api/browser-session/probe" : "/api/browser-session", {
-      method:focused && sessionState?.state === "connecting" ? "POST" : "GET",
+    const probe = focused && (sessionState?.state === "connecting" ||
+      (sessionState?.state === "error" && sessionState.error?.code === "SESSION_EXPIRED"));
+    const data = await api(probe ? "/api/browser-session/probe" : "/api/browser-session", {
+      method: probe ? "POST" : "GET",
     });
     renderSession(data);
   } catch (error) { $("session-status").textContent = errorMessage(error); }
@@ -570,7 +593,12 @@ async function sessionAction(operation) {
 }
 $("show-session").addEventListener("click", () => {
   $("browser-session-panel").open = true;
-  $("session-profile").focus();
+  if (sessionState?.state === "disconnected" &&
+      $("session-profile").value && $("session-consent").checked) {
+    sessionAction("connect");
+  } else {
+    $("session-profile").focus();
+  }
 });
 $("session-consent").addEventListener("change", () => {$("session-connect").disabled=!$("session-consent").checked || !sessionState?.profiles.length;});
 $("session-connect").addEventListener("click", () => sessionAction("connect"));

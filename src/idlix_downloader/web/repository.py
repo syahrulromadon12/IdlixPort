@@ -13,7 +13,7 @@ from .errors import AppError
 
 MAX_ATTEMPTS = 3
 
-TERMINAL = {"completed", "failed", "cancelled", "interrupted", "partial"}
+TERMINAL = {"completed", "failed", "cancelled", "interrupted", "partial", "paused"}
 
 
 class Repository:
@@ -112,7 +112,7 @@ class Repository:
                 if row is None or row[0] <= time.time():
                     raise AppError("INSPECTION_EXPIRED")
             count = db.execute(
-                "SELECT count(*) FROM jobs WHERE state IN ('queued','running','cancelling')"
+                "SELECT count(*) FROM jobs WHERE state IN ('queued','running','cancelling','pausing')"
             ).fetchone()[0]
             if count >= self.limit:
                 raise AppError("QUEUE_FULL")
@@ -140,7 +140,7 @@ class Repository:
         with self.connection() as db:
             db.execute("BEGIN IMMEDIATE")
             if db.execute(
-                "SELECT 1 FROM jobs WHERE kind=? AND state IN ('running','cancelling')", (kind,)
+                "SELECT 1 FROM jobs WHERE kind=? AND state IN ('running','cancelling','pausing')", (kind,)
             ).fetchone():
                 return None
             row = db.execute(
@@ -173,8 +173,10 @@ class Repository:
             row = db.execute(
                 "SELECT state,cancel_requested,kind FROM jobs WHERE id=?", (job_id,)
             ).fetchone()
-            if not row or row["state"] not in ("running", "cancelling"):
+            if not row or row["state"] not in ("running", "cancelling", "pausing"):
                 raise AppError("CONFLICT")
+            if row["state"] == "pausing" and state in {"failed", "interrupted"}:
+                state, result, error = "paused", None, None
             if row["cancel_requested"]:
                 state, result, error = "cancelled", None, AppError("CANCELLED").public()
             if state in ("completed", "partial") and result is not None:
@@ -216,18 +218,45 @@ class Repository:
                 raise KeyError(job_id)
             db.execute(
                 (
-                    "UPDATE jobs SET cancel_requested=1,state=CASE WHEN state='queued' THEN "
+                    "UPDATE jobs SET cancel_requested=1,state=CASE WHEN state IN ('queued','paused') THEN "
                     "'cancelled' ELSE 'cancelling' END,updated=? WHERE id=? AND state IN "
-                    "('queued','running')"
+                    "('queued','running','paused')"
                 ),
                 (time.time(), job_id),
+            )
+
+    def pause(self, job_id):
+        with self.connection() as db:
+            cursor = db.execute(
+                "UPDATE jobs SET state='pausing',updated=? "
+                "WHERE id=? AND kind='download' AND state='running' AND phase='downloading'",
+                (time.time(), job_id),
+            )
+            if cursor.rowcount != 1:
+                raise AppError("CONFLICT")
+
+    def resume(self, job_id, session):
+        with self.connection() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT state,payload FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if not row or row["state"] != "paused":
+                raise AppError("CONFLICT")
+            if db.execute(
+                "SELECT count(*) FROM jobs WHERE state IN ('queued','running','cancelling','pausing')"
+            ).fetchone()[0] >= self.limit:
+                raise AppError("QUEUE_FULL")
+            payload = {**json.loads(row["payload"]), **session, "resume_paused": True}
+            db.execute(
+                "UPDATE jobs SET state='queued',phase=NULL,progress='{}',error=NULL,payload=?,"
+                "updated=? WHERE id=?",
+                (json.dumps(payload, allow_nan=False), time.time(), job_id),
             )
 
     def recover(self):
         with self.connection() as db:
             db.execute(
-                "UPDATE jobs SET state='interrupted',updated=? "
-                "WHERE state IN ('running','cancelling')",
+                "UPDATE jobs SET state=CASE WHEN state='pausing' THEN 'paused' ELSE 'interrupted' END,updated=? "
+                "WHERE state IN ('running','cancelling','pausing')",
                 (time.time(),),
             )
 
@@ -309,12 +338,13 @@ class Repository:
                 raise AppError("RETRY_LIMIT")
             if (
                 db.execute(
-                    "SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running','cancelling')"
+                    "SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running','cancelling','pausing')"
                 ).fetchone()[0]
                 >= self.limit
             ):
                 raise AppError("QUEUE_FULL")
             payload = json.loads(row["payload"])
+            payload.pop("resume_paused", None)
             payload.update(retry_of=job_id, root_job_id=root, attempt=number + 1)
             if row["state"] == "partial":
                 payload["video_source"] = job_id
@@ -351,7 +381,7 @@ class Repository:
             return [
                 row[0]
                 for row in db.execute(
-                    "SELECT id FROM jobs WHERE state IN ('queued','running','cancelling') "
+                    "SELECT id FROM jobs WHERE state IN ('queued','running','cancelling','pausing') "
                     "ORDER BY created,id"
                 )
             ]
@@ -439,7 +469,7 @@ class Repository:
                         raise AppError("CONFLICT")
                     return old["batch_id"]
             count = db.execute(
-                "SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running','cancelling')"
+                "SELECT COUNT(*) FROM jobs WHERE state IN ('queued','running','cancelling','pausing')"
             ).fetchone()[0]
             if count + len(payloads) > self.limit:
                 raise AppError("QUEUE_FULL")
@@ -487,10 +517,10 @@ class Repository:
             if not db.execute("SELECT 1 FROM batches WHERE id=?", (batch_id,)).fetchone():
                 raise KeyError(batch_id)
             db.execute(
-                "UPDATE jobs SET cancel_requested=1,state=CASE WHEN state='queued' THEN "
+                "UPDATE jobs SET cancel_requested=1,state=CASE WHEN state IN ('queued','paused') THEN "
                 "'cancelled' ELSE 'cancelling' END,updated=? "
                 "WHERE id IN (SELECT current_job_id FROM batch_items WHERE batch_id=?) "
-                "AND state IN ('queued','running')",
+                "AND state IN ('queued','running','paused')",
                 (time.time(), batch_id),
             )
 

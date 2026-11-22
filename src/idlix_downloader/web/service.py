@@ -130,6 +130,32 @@ class Service:
             with binding:
                 return self.repository.retry(job_id, key)
 
+    def can_pause(self, job):
+        if job["kind"] != "download" or job["state"] != "running" or job["phase"] != "downloading":
+            return False
+        output = self.destinations.root(job["payload"].get("folder_id", "default")) / job["id"]
+        return (output / ".resume.json").is_file() and (output / "media.mp4.part").is_file()
+
+    def pause(self, job_id):
+        if not self.can_pause(self.repository.get(job_id)):
+            raise AppError("CONFLICT")
+        self.repository.pause(job_id)
+
+    def resume(self, job_id):
+        with self.artifacts.lock:
+            job = self.repository.get(job_id)
+            payload = job["payload"]
+            binding = (
+                self.sessions.binding(
+                    payload["url"], expected="current" if payload.get("session_ref") else None
+                )
+                if self.sessions else nullcontext({})
+            )
+            with binding as context:
+                if payload.get("session_ref") and not context.get("session_ref"):
+                    raise AppError("SESSION_EXPIRED")
+                self.repository.resume(job_id, context)
+
     def snapshot(self, job_id, *, inspection_only=False):
         job = self.repository.get(job_id)
         if inspection_only and job["kind"] != "inspect":
@@ -154,6 +180,8 @@ class Service:
             stale = bool(reference and (not self.sessions or not self.sessions.accepts(reference)))
             response["needs_reinspection"] = stale
             response["inspection_id"] = job["payload"].get("inspection_id")
+            response["can_pause"] = self.can_pause(job)
+            response["can_resume"] = job["state"] == "paused"
             response["can_retry"] = self.repository.retry_available(job_id) and not stale
             response["storage"] = self.artifacts.storage_summary(job)
             response["resumed"] = bool((job["result"] or {}).get("resumed"))
@@ -248,6 +276,8 @@ class Service:
                 "queued",
                 "running",
                 "cancelling",
+                "pausing",
+                "paused",
                 "completed",
                 "partial",
                 "failed",
@@ -255,10 +285,12 @@ class Service:
                 "interrupted",
             )
         }
-        if counts["running"] or counts["cancelling"]:
+        if counts["running"] or counts["cancelling"] or counts["pausing"]:
             state = "running"
         elif counts["queued"]:
             state = "queued"
+        elif counts["paused"]:
+            state = "paused"
         elif counts["completed"] == len(jobs):
             state = "completed"
         elif counts["cancelled"] == len(jobs):
@@ -270,10 +302,12 @@ class Service:
     def batch_summary(self, batch_id):
         counts = self.repository.batch_counts(batch_id)
         total = sum(counts.values())
-        if counts.get("running") or counts.get("cancelling"):
+        if counts.get("running") or counts.get("cancelling") or counts.get("pausing"):
             state = "running"
         elif counts.get("queued"):
             state = "queued"
+        elif counts.get("paused"):
+            state = "paused"
         elif counts.get("completed") == total:
             state = "completed"
         elif counts.get("cancelled") == total:

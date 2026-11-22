@@ -70,6 +70,20 @@ def test_guarded_native_hls_download_and_merge(public_route, tmp_path):
     assert any(path.endswith(".ts") for path, _, _ in requests)
 
 
+def test_segment_recovers_after_three_transient_failures(public_route, tmp_path):
+    root, requests, _ = public_route
+    playlist = root / "1080.m3u8"
+    playlist.write_text(playlist.read_text().replace("10800.ts", "transient.ts"))
+
+    result = run_job(
+        config(tmp_path, "http://source.example/master.m3u8"), Events(lambda event: None)
+    )
+
+    assert result["effective_quality"]["quality_class"] == 1080
+    assert result["artifacts"]
+    assert sum(path == "/transient.ts" for path, _, _ in requests) == 4
+
+
 def test_nested_manifest_cannot_escape_guard(public_route, tmp_path):
     root, _, _ = public_route
     (root / "evil.m3u8").write_text(
@@ -325,7 +339,12 @@ def test_hls_rotation_across_every_verified_g7_host(public_route, tmp_path, monk
     from idlix_downloader.web.config import WebConfig
 
     root, _, _ = public_route
-    hosts = [host for host in WebConfig(tmp_path).allowed_hosts if host.startswith("g7.")]
+    rules = WebConfig(tmp_path).allowed_hosts
+    domains = [rule for rule in rules if rule.startswith(".") and rule != ".majorplay.net"]
+    hosts = ["g7" + domain for domain in domains]
+    policy = NetworkPolicy(rules)
+    assert all(policy.host_allowed("z42" + domain) for domain in domains)
+    assert not policy.host_allowed("z42.unlisted.example")
     assert len(hosts) == 30
     lookup = socket.getaddrinfo
 
@@ -352,7 +371,7 @@ def test_hls_rotation_across_every_verified_g7_host(public_route, tmp_path, monk
         (root / "master.m3u8").read_text().replace("1080.m3u8", "rotating-video.m3u8")
     )
     cfg = config(tmp_path, "http://source.example/rotating-master.m3u8")
-    cfg["allowed_hosts"] = ["source.example", *hosts]
+    cfg["allowed_hosts"] = ["source.example", *rules]
     result = run_job(cfg, Events(lambda event: None))
     assert visited == set(hosts)
     assert result["effective_quality"]["quality_class"] == 1080

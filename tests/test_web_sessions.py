@@ -132,6 +132,26 @@ def test_focus_storm_does_not_repeat_cookie_read(session_environment, monkeypatc
     assert manager.status()["state"] == "connecting"
 
 
+def test_focus_recovers_session_after_profile_changes(session_environment, monkeypatch):
+    manager, _, _, profile = session_environment
+    original_probe = manager._probe
+
+    def probe(reference):
+        result = original_probe(reference)
+        if result and not result.get("account_verified"):
+            result["code"] = "SESSION_EXPIRED"
+        return result
+
+    monkeypatch.setattr(manager, "_probe", probe)
+    manager.connect(profile.id, URL, True)
+    assert wait_state(manager, {"error"})["error"]["code"] == "SESSION_EXPIRED"
+    assert manager.focus()["state"] == "error"
+
+    profile.cookie_file.write_text("member")
+    manager.focus()
+    assert wait_state(manager, {"connected"})["media_ready"]
+
+
 def test_permission_retry_without_new_consent_and_verification_is_not_ready(session_environment):
     manager, _, _, profile = session_environment
     profile.cookie_file.write_text("permission")

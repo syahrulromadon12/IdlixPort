@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 from yt_dlp.networking import Request
 
 
-def prepare_resume(downloader, formats, effective, output, previous=None):
+def prepare_resume(downloader, formats, effective, output, previous=None, *, in_place=False):
     """Require strong ETag, byte ranges, identical stream layout and sampled prefix."""
     if (
         len(formats) != 1
@@ -46,8 +46,8 @@ def prepare_resume(downloader, formats, effective, output, previous=None):
             "ext": item["ext"],
         }
         resumed = False
-        if previous:
-            previous = Path(previous)
+        if previous or in_place:
+            previous = output if in_place else Path(previous)
             sidecar = previous / ".resume.json"
             source = previous / ("media." + item["ext"] + ".part")
             if (
@@ -64,6 +64,9 @@ def prepare_resume(downloader, formats, effective, output, previous=None):
                 with source.open("rb") as handle:
                     sample = handle.read(min(65536, source.stat().st_size))
                 if sample == prefix[: len(sample)]:
+                    if in_place:
+                        item["http_headers"] = {**item.get("http_headers", {}), "If-Range": etag}
+                        return True
                     destination_path = output / source.name
                     # A failed copy must not become an implicit resume candidate.
                     try:
@@ -76,6 +79,8 @@ def prepare_resume(downloader, formats, effective, output, previous=None):
                         destination_path.unlink(missing_ok=True)
                         raise
                     resumed = True
+        if in_place:
+            return False
         # If the representation changes between probe and transfer, If-Range forces
         # a full response. yt-dlp restarts instead of appending an incompatible body.
         item["http_headers"] = {**item.get("http_headers", {}), "If-Range": etag}

@@ -124,6 +124,11 @@ def media_server(tmp_path_factory):
         def do_GET(self):
             requests.append((self.path, self.headers.get("Referer"), self.headers.get("Range")))
             base = f"http://127.0.0.1:{self.server.server_port}"
+            if self.path == "/transient.ts":
+                if sum(path == "/transient.ts" for path, _, _ in requests) <= 3:
+                    self.send_error(503)
+                    return
+                self.path = "/10800.ts"
             if self.path == "/expired.ts":
                 self.send_error(403)
                 return

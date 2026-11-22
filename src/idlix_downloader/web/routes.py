@@ -140,6 +140,16 @@ def install_routes(app):
         request.app.state.repository.cancel(job_id)
         return request.app.state.service.snapshot(job_id)
 
+    @app.post("/api/jobs/{job_id}/pause")
+    def pause(job_id: ID, request: Request, body: EmptyRequest | None = None):
+        request.app.state.service.pause(job_id)
+        return request.app.state.service.snapshot(job_id)
+
+    @app.post("/api/jobs/{job_id}/resume")
+    def resume(job_id: ID, request: Request, body: EmptyRequest | None = None):
+        request.app.state.service.resume(job_id)
+        return request.app.state.service.snapshot(job_id)
+
     @app.post("/api/jobs/{job_id}/retry", status_code=202)
     def retry(
         job_id: ID, request: Request, body: EmptyRequest | None = None, idempotency_key: Key = None

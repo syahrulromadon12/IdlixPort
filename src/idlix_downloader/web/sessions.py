@@ -122,6 +122,15 @@ class Sessions:
     def focus(self):
         # A focus event can wake the scheduler, never bypass debounce or deadline.
         with self.lock:
+            if (
+                self.state == "error"
+                and self.code == "SESSION_EXPIRED"
+                and self.fingerprint is not None
+                and time.monotonic() < self.deadline
+                and self.profiles[self.selected].fingerprint(urlsplit(self.url).hostname)
+                != self.fingerprint
+            ):
+                self.state, self.code = "connecting", None
             if self.state == "connecting":
                 self.wake.set()
         return self.status()

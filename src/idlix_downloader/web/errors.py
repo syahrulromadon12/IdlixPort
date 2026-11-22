@@ -79,6 +79,7 @@ ERRORS = {
         "Periksa ulang sumber.",
     ),
     "UNKNOWN_RESOLUTION": ("Resolusi sumber belum dapat dibuktikan.", False, "Pilih sumber lain."),
+    "RESUME_UNAVAILABLE": ("File parsial tidak cocok dengan sumber saat ini.", False, "Periksa ulang untuk memulai unduhan baru."),
     "SOURCE_UNAVAILABLE": ("Sumber tidak dapat diproses.", True, "Periksa URL dan coba lagi."),
     "VERIFICATION_REQUIRED": (
         "IDLIX meminta pemeriksaan tambahan untuk video ini. "

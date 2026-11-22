@@ -80,3 +80,48 @@ def test_segmented_or_weakly_identified_media_never_reuses_partials(tmp_path):
     downloader = Mock()
     assert not prepare_resume(downloader, [{"protocol": "m3u8_native"}], {}, tmp_path)
     downloader.urlopen.assert_not_called()
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_paused_http_transfer_reuses_only_matching_partial(public_route, tmp_path, changed):
+    _, requests, _ = public_route
+    cfg = config(tmp_path, "http://source.example/direct.mp4")
+    run_job(cfg, Events(lambda event: None))
+    output = tmp_path / "output"
+    video = output / "media.mp4"
+    data = video.read_bytes()
+    video.unlink()
+    partial = output / "media.mp4.part"
+    partial.write_bytes(data[:1024])
+    if changed:
+        partial.write_bytes(b"x" + data[1:1024])
+    cfg["payload"]["resume_paused"] = True
+    requests.clear()
+
+    if changed:
+        with pytest.raises(AppError, match="RESUME_UNAVAILABLE"):
+            run_job(cfg, Events(lambda event: None))
+        assert partial.read_bytes() == b"x" + data[1:1024]
+        assert not video.exists()
+    else:
+        assert run_job(cfg, Events(lambda event: None))["resumed"]
+        assert video.read_bytes() == data
+        assert "bytes=1024-" in [row[2] for row in requests]
+
+
+def test_paused_job_survives_restart_and_requeues_same_attempt(tmp_path):
+    from idlix_downloader.web.repository import Repository
+
+    repository = Repository(tmp_path)
+    job_id = repository.enqueue("download", {"url": "https://example.com/video.mp4"})
+    assert repository.claim("download")["id"] == job_id
+    repository.progress(job_id, {"phase": "downloading"})
+    repository.pause(job_id)
+    assert repository.claim("download") is None
+    repository.recover()
+    assert repository.get(job_id)["state"] == "paused"
+    repository.resume(job_id, {})
+    job = repository.claim("download")
+    assert job["id"] == job_id
+    assert job["payload"]["resume_paused"]
+    assert job["payload"].get("attempt", 1) == 1

@@ -189,7 +189,10 @@ class Runner:
             started = time.monotonic()
             while True:
                 current = self.repository.get(job["id"])
-                if self.stopped.is_set() or current["cancel_requested"] or overflow.is_set():
+                if (
+                    self.stopped.is_set() or current["cancel_requested"]
+                    or current["state"] == "pausing" or overflow.is_set()
+                ):
                     raise AppError("WORKER_FAILED")
                 if time.monotonic() - started > (
                     INSPECTION_TIMEOUT if job["kind"] == "inspect" else 86400

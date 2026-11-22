@@ -55,8 +55,12 @@ def media_downloader(config, output, events):
         ignore_no_formats_error=True,
         outtmpl={"default": "media.%(ext)s"},
         writesubtitles=False,
-        retries=2,
-        fragment_retries=2,
+        retries=5,
+        fragment_retries=5,
+        retry_sleep_functions={
+            kind: lambda n: 2 ** min(3, n)
+            for kind in ("http", "fragment")
+        },
         skip_unavailable_fragments=False,
         extractor_retries=0,
         fixup="never",
@@ -194,7 +198,13 @@ def _fresh_job(config, events):
                     "requested_formats": formats,
                 }
 
-        resumed = prepare_resume(downloader, formats, effective, output, config.get("resume_from"))
+        resume_paused = payload.get("resume_paused", False)
+        resumed = prepare_resume(
+            downloader, formats, effective, output, config.get("resume_from"),
+            in_place=resume_paused,
+        )
+        if resume_paused and not resumed:
+            raise AppError("RESUME_UNAVAILABLE")
         downloader.web_budget.disable()
         downloader.params["format"] = selected
         downloader.format_selector = selected
